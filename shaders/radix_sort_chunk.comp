@@ -1,0 +1,96 @@
+#version 450 core
+
+#include "sort_data.comp"
+
+layout(set = 1, binding = 0, std430) buffer Keys
+{
+    uint keys[];
+};
+
+layout(set = 1, binding = 1, std430) buffer Values
+{
+    uint values[];
+};
+
+shared uint key_buf[SORT_CHUNK_SIZE];
+shared uint sorted_key_buf[SORT_CHUNK_SIZE];
+shared uint scratch[SORT_CHUNK_SIZE];
+shared uint total_false;
+
+shared uint val_buf[SORT_CHUNK_SIZE];
+shared uint sorted_val_buf[SORT_CHUNK_SIZE];
+
+void main(void)
+{
+    // Also use the radix step to pad arrays out with UINT_MAX
+    if (gl_GlobalInvocationID.x < size) {
+        key_buf[gl_LocalInvocationID.x] = keys[gl_GlobalInvocationID.x];
+        val_buf[gl_LocalInvocationID.x] = values[gl_GlobalInvocationID.x];
+    } else {
+        // Pad any missing data with uint max, which will be sorted out to the end
+        key_buf[gl_LocalInvocationID.x] = UINT_MAX;
+        val_buf[gl_LocalInvocationID.x] = UINT_MAX;
+    }
+
+    // Sort each bit, from LSB to MSB
+    for (uint i = 0; i < 32; ++i) {
+        barrier();
+        const uint mask = 1 << i;
+        scratch[gl_LocalInvocationID.x] = (key_buf[gl_LocalInvocationID.x] & mask) != 0 ? 0 : 1;
+        
+        // A bit annoying to copy this code around, but we can't have unsized array
+        // parameters to functions in GLSL
+        uint offs = 1;
+        // Reduce step up tree
+        for (int d = SORT_CHUNK_SIZE >> 1; d > 0; d = d >> 1) {
+            barrier();
+            if (gl_LocalInvocationID.x < d) {
+                uint a = offs * (2 * gl_LocalInvocationID.x + 1) - 1;
+                uint b = offs * (2 * gl_LocalInvocationID.x + 2) - 1;
+                scratch[b] += scratch[a];
+            }
+            offs = offs << 1;
+        }
+
+        if (gl_LocalInvocationID.x == 0) {
+            total_false = scratch[SORT_CHUNK_SIZE - 1];
+            scratch[SORT_CHUNK_SIZE - 1] = 0;
+        }
+
+        // Sweep down the tree to finish the scan
+        for (int d = 1; d < SORT_CHUNK_SIZE; d = d << 1) {
+            offs = offs >> 1;
+            barrier();
+            if (gl_LocalInvocationID.x < d) {
+                uint a = offs * (2 * gl_LocalInvocationID.x + 1) - 1;
+                uint b = offs * (2 * gl_LocalInvocationID.x + 2) - 1;
+                const uint tmp = scratch[a];
+                scratch[a] = scratch[b];
+                scratch[b] += tmp;
+            }
+        }
+        barrier();
+
+        // Now scatter the elements to their destinations
+        const uint f = scratch[gl_LocalInvocationID.x];
+        const uint t = gl_LocalInvocationID.x - f + total_false;
+        if ((key_buf[gl_LocalInvocationID.x] & mask) != 0) {
+            sorted_key_buf[t] = key_buf[gl_LocalInvocationID.x];
+            sorted_val_buf[t] = val_buf[gl_LocalInvocationID.x];
+        } else {
+            sorted_key_buf[f] = key_buf[gl_LocalInvocationID.x];
+            sorted_val_buf[f] = val_buf[gl_LocalInvocationID.x];
+        }
+        barrier();
+
+        // Copy the sorted set to the buf for the next pass
+        key_buf[gl_LocalInvocationID.x] = sorted_key_buf[gl_LocalInvocationID.x];
+        val_buf[gl_LocalInvocationID.x] = sorted_val_buf[gl_LocalInvocationID.x];
+    }
+    barrier();
+    
+    // Write back the sorted buffer
+    keys[gl_GlobalInvocationID.x] = key_buf[gl_LocalInvocationID.x];
+    values[gl_GlobalInvocationID.x] = val_buf[gl_LocalInvocationID.x];
+}
+

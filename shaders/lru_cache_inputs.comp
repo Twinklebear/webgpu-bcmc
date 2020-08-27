@@ -1,0 +1,35 @@
+#ifndef LRU_CACHE_INPUTS_COMP
+#define LRU_CACHE_INPUTS_COMP
+
+layout(set = 0, binding = 0, std430) buffer CachedItemSlots
+{
+    // Slot occupied by currently cached items, or -1 if not cached
+    int cached_item_slot[];
+};
+
+layout(set = 0, binding = 1, std430) buffer SlotAge
+{
+    // Age of the item in the slot
+    uint slot_age[];
+};
+
+layout(set = 0, binding = 2, std430) buffer SlotAvailable
+{
+    // 1/0 if the slot is available
+    uint slot_available[];
+};
+
+layout(set = 0, binding = 3, std430) buffer SlotAvailableIDs
+{
+    // IDs of available slots
+    uint slot_available_id[];
+};
+
+layout(set = 0, binding = 4, std430) buffer SlotItemIDs
+{
+    // IDs of the item in the slot
+    int slot_item_id[];
+};
+
+#endif
+

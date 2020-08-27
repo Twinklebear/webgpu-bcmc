@@ -1,0 +1,44 @@
+#version 450 core
+
+#include "compute_vertex_values.comp"
+
+layout(set = 1, binding = 0, std430) buffer ActiveVoxels {
+    uint active_voxels[];
+};
+
+layout(set = 1, binding = 1, std430) buffer NumVerts {
+    uint num_verts[];
+};
+
+layout(set = 1, binding = 2, std140) uniform TriTable {
+    // Stride alignment rules: need to pack each into 4 ivec4's
+    ivec4 tri_table[256 * 4];
+};
+
+void main(void) {
+    const uint voxel_id = active_voxels[gl_GlobalInvocationID.x];
+    const float values[8] = compute_vertex_values(voxel_id_to_voxel(voxel_id));
+    uint case_index = 0;
+    for (int i = 0; i < 8; ++i) {
+        if (values[i] <= isovalue) {
+            case_index |= 1 << i;
+        }
+    }
+
+    uint nverts = 0;
+    // The triangle table gives us the mapping from index to actual
+    // triangles to return for this configuration
+    uint chunk = case_index * 4;
+    ivec4 table_chunk = tri_table[chunk];
+    for (uint t = 0; table_chunk[t] != -1;) {
+        ++nverts;
+        if (t == 3) {
+            table_chunk = tri_table[++chunk];
+            t = 0;
+        } else {
+            ++t;
+        }
+    }
+    num_verts[gl_GlobalInvocationID.x] = nverts;
+}
+

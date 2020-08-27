@@ -1,0 +1,380 @@
+#define UINT_MAX uint(0xffffffff)
+
+struct EmulateUint64 {
+    uint lo;
+    uint hi;
+};
+
+layout(set = 0, binding = 0, std430) buffer Compressed
+{
+    EmulateUint64 compressed[];
+};
+
+layout(set = 0, binding = 1, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+    uint max_bits;
+    float isovalue;
+};
+
+// Each ZFP block is 4^3
+const uint ZFP_BLOCK_SIZE = 64;
+
+EmulateUint64 make_emulate_uint64(uint hi, uint lo)
+{
+    EmulateUint64 a;
+    a.lo = lo;
+    a.hi = hi;
+    return a;
+}
+
+EmulateUint64 bitwise_and(const EmulateUint64 a, const EmulateUint64 b)
+{
+    EmulateUint64 c;
+    c.lo = a.lo & b.lo;
+    c.hi = a.hi & b.hi;
+    return c;
+}
+
+EmulateUint64 bitwise_or(const EmulateUint64 a, const EmulateUint64 b)
+{
+    EmulateUint64 c;
+    c.lo = a.lo | b.lo;
+    c.hi = a.hi | b.hi;
+    return c;
+}
+
+EmulateUint64 shift_left(const EmulateUint64 a, uint n)
+{
+    // TODO: cleaner implementation?
+    if (n == 0) {
+        return a;
+    }
+    EmulateUint64 b;
+    if (n < 32) {
+        const uint carry = a.lo & (UINT_MAX << (32 - n));
+        b.lo = a.lo << n;
+        b.hi = (a.hi << n) | (carry >> (32 - n));
+    } else {
+        b.lo = 0;
+        b.hi = a.lo << (n - 32);
+    }
+    return b;
+}
+
+EmulateUint64 shift_right(const EmulateUint64 a, uint n)
+{
+    if (n == 0) {
+        return a;
+    }
+    EmulateUint64 b;
+    if (n < 32) {
+        const uint carry = a.hi & (UINT_MAX >> (32 - n));
+        b.lo = (a.lo >> n) | (carry << (32 - n));
+        b.hi = a.hi >> n;
+    } else {
+        b.lo = a.hi >> (n - 32);
+        b.hi = 0;
+    }
+    return b;
+}
+
+EmulateUint64 make_mask(uint n)
+{
+    EmulateUint64 a = make_emulate_uint64(0, 0);
+    if (n > 0 && n < 65) {
+        if (n > 32) {
+            a.lo = UINT_MAX;
+            a.hi = UINT_MAX >> (64 - n);
+        } else {
+            a.lo = UINT_MAX >> (32 - n);
+            a.hi = 0;
+        }
+    }
+    return a;
+}
+
+
+#define zfp_index_3d(x, y, z) ((x) + 4 * ((y) + 4 * (z)))
+const uint ZFP_PERM3D[64] = {
+    zfp_index_3d(0, 0, 0),  //  0 : 0
+
+    zfp_index_3d(1, 0, 0),  //  1 : 1
+    zfp_index_3d(0, 1, 0),  //  2 : 1
+    zfp_index_3d(0, 0, 1),  //  3 : 1
+
+    zfp_index_3d(0, 1, 1),  //  4 : 2
+    zfp_index_3d(1, 0, 1),  //  5 : 2
+    zfp_index_3d(1, 1, 0),  //  6 : 2
+
+    zfp_index_3d(2, 0, 0),  //  7 : 2
+    zfp_index_3d(0, 2, 0),  //  8 : 2
+    zfp_index_3d(0, 0, 2),  //  9 : 2
+
+    zfp_index_3d(1, 1, 1),  // 10 : 3
+
+    zfp_index_3d(2, 1, 0),  // 11 : 3
+    zfp_index_3d(2, 0, 1),  // 12 : 3
+    zfp_index_3d(0, 2, 1),  // 13 : 3
+    zfp_index_3d(1, 2, 0),  // 14 : 3
+    zfp_index_3d(1, 0, 2),  // 15 : 3
+    zfp_index_3d(0, 1, 2),  // 16 : 3
+
+    zfp_index_3d(3, 0, 0),  // 17 : 3
+    zfp_index_3d(0, 3, 0),  // 18 : 3
+    zfp_index_3d(0, 0, 3),  // 19 : 3
+
+    zfp_index_3d(2, 1, 1),  // 20 : 4
+    zfp_index_3d(1, 2, 1),  // 21 : 4
+    zfp_index_3d(1, 1, 2),  // 22 : 4
+
+    zfp_index_3d(0, 2, 2),  // 23 : 4
+    zfp_index_3d(2, 0, 2),  // 24 : 4
+    zfp_index_3d(2, 2, 0),  // 25 : 4
+
+    zfp_index_3d(3, 1, 0),  // 26 : 4
+    zfp_index_3d(3, 0, 1),  // 27 : 4
+    zfp_index_3d(0, 3, 1),  // 28 : 4
+    zfp_index_3d(1, 3, 0),  // 29 : 4
+    zfp_index_3d(1, 0, 3),  // 30 : 4
+    zfp_index_3d(0, 1, 3),  // 31 : 4
+
+    zfp_index_3d(1, 2, 2),  // 32 : 5
+    zfp_index_3d(2, 1, 2),  // 33 : 5
+    zfp_index_3d(2, 2, 1),  // 34 : 5
+
+    zfp_index_3d(3, 1, 1),  // 35 : 5
+    zfp_index_3d(1, 3, 1),  // 36 : 5
+    zfp_index_3d(1, 1, 3),  // 37 : 5
+
+    zfp_index_3d(3, 2, 0),  // 38 : 5
+    zfp_index_3d(3, 0, 2),  // 39 : 5
+    zfp_index_3d(0, 3, 2),  // 40 : 5
+    zfp_index_3d(2, 3, 0),  // 41 : 5
+    zfp_index_3d(2, 0, 3),  // 42 : 5
+    zfp_index_3d(0, 2, 3),  // 43 : 5
+
+    zfp_index_3d(2, 2, 2),  // 44 : 6
+
+    zfp_index_3d(3, 2, 1),  // 45 : 6
+    zfp_index_3d(3, 1, 2),  // 46 : 6
+    zfp_index_3d(1, 3, 2),  // 47 : 6
+    zfp_index_3d(2, 3, 1),  // 48 : 6
+    zfp_index_3d(2, 1, 3),  // 49 : 6
+    zfp_index_3d(1, 2, 3),  // 50 : 6
+
+    zfp_index_3d(0, 3, 3),  // 51 : 6
+    zfp_index_3d(3, 0, 3),  // 52 : 6
+    zfp_index_3d(3, 3, 0),  // 53 : 6
+
+    zfp_index_3d(3, 2, 2),  // 54 : 7
+    zfp_index_3d(2, 3, 2),  // 55 : 7
+    zfp_index_3d(2, 2, 3),  // 56 : 7
+
+    zfp_index_3d(1, 3, 3),  // 57 : 7
+    zfp_index_3d(3, 1, 3),  // 58 : 7
+    zfp_index_3d(3, 3, 1),  // 59 : 7
+
+    zfp_index_3d(2, 3, 3),  // 60 : 8
+    zfp_index_3d(3, 2, 3),  // 61 : 8
+    zfp_index_3d(3, 3, 2),  // 62 : 8
+
+    zfp_index_3d(3, 3, 3),  // 63 : 9
+};
+#undef zfp_index_3d
+
+struct BlockReader {
+    uint current_bit;
+    // Index of our current word in the Compressed buffer
+    uint current_word;
+    EmulateUint64 word_buffer;
+};
+
+BlockReader create_block_reader(uint block_index)
+{
+    BlockReader reader;
+    reader.current_word = (block_index * max_bits) / 64;  // sizeof(Word) * 8 = 64
+    reader.current_bit = (block_index * max_bits) % 64;
+
+    reader.word_buffer = compressed[reader.current_word];
+    reader.word_buffer = shift_right(reader.word_buffer, reader.current_bit);
+    return reader;
+}
+
+void advance_word(inout BlockReader reader)
+{
+    reader.current_bit = 0;
+    ++reader.current_word;
+    reader.word_buffer = compressed[reader.current_word];
+}
+
+uint read_bit(inout BlockReader reader)
+{
+    uint bit = reader.word_buffer.lo & 1;
+    ++reader.current_bit;
+    reader.word_buffer = shift_right(reader.word_buffer, 1);
+
+    // Advance to next bit if we left the current word
+    if (reader.current_bit >= 64) {
+        advance_word(reader);
+    }
+    return bit;
+}
+
+// Same as ZFP CUDA, assumes n_bits <= 64
+EmulateUint64 read_bits(inout BlockReader reader, const uint n_bits)
+{
+    uint rem_bits = 64 - reader.current_bit;
+    uint first_read = min(rem_bits, n_bits);
+
+    EmulateUint64 mask = make_mask(first_read);
+    EmulateUint64 bits = bitwise_and(reader.word_buffer, mask);
+    reader.word_buffer = shift_right(reader.word_buffer, n_bits);
+    reader.current_bit += first_read;
+
+    // If we're reading more bits than we had in the buffer, we need to
+    // get the next word and read some bits from it
+    uint next_read = 0;
+    if (n_bits >= rem_bits) {
+        advance_word(reader);
+        next_read = n_bits - first_read;
+    }
+
+    mask = make_mask(next_read);
+    bits = bitwise_or(bits, shift_left(bitwise_and(reader.word_buffer, mask), first_read));
+
+    reader.word_buffer = shift_right(reader.word_buffer, next_read);
+    reader.current_bit += next_read;
+    return bits;
+}
+
+// Map negabinary unsigned int to two's complement int
+int uint2int(uint x)
+{
+    return int((x ^ 0xaaaaaaaau) - 0xaaaaaaaau);
+}
+
+void decode_ints(inout BlockReader reader,
+                 const uint block_max_bits,
+                 inout uint block[ZFP_BLOCK_SIZE])
+{
+    for (uint i = 0; i < ZFP_BLOCK_SIZE; ++i) {
+        block[i] = 0;
+    }
+
+    const uint intprec = 32;
+    EmulateUint64 x = make_emulate_uint64(0, 0);
+    const EmulateUint64 one = make_emulate_uint64(0, 1);
+
+    uint bits = block_max_bits;
+    for (uint k = intprec, n = 0; bits != 0 && k-- > 0;) {
+        uint m = min(n, bits);
+        bits -= m;
+        x = read_bits(reader, m);
+        for (; n < ZFP_BLOCK_SIZE && bits != 0 && (bits--, read_bit(reader) != 0);
+             x = bitwise_or(x, shift_left(one, n++))) {
+            for (; n < (ZFP_BLOCK_SIZE - 1) && bits != 0 && (bits--, read_bit(reader) == 0);
+                 ++n)
+                ;
+        }
+
+        // Deposit the bit plane
+        for (uint i = 0; i < ZFP_BLOCK_SIZE; ++i, x = shift_right(x, 1)) {
+            block[i] += (x.lo & 1) << k;
+        }
+    }
+}
+
+void inverse_lift(inout int block[ZFP_BLOCK_SIZE], const uint s, const uint idx)
+{
+    ivec4 v;
+    for (uint i = 0; i < 4; ++i) {
+        v[i] = block[idx + i * s];
+    }
+
+    /* Non-orthogonal transform for ZFP:
+     *       [4  6 -4 -1] [x]
+     * 1/4 * [4  2  4  5] [y]
+     *       [4 -2  4 -5] [z]
+     *       [4 -6 -4  1] [w]
+     */
+
+    v.y += v.w >> 1;
+    v.w -= v.y >> 1;
+
+    v.y += v.w;
+    v.w <<= 1;
+    v.w -= v.y;
+
+    v.z += v.x;
+    v.x <<= 1;
+    v.x -= v.z;
+
+    v.y += v.z;
+    v.z <<= 1;
+    v.z -= v.y;
+
+    v.w += v.x;
+    v.x <<= 1;
+    v.x -= v.w;
+
+    for (uint i = 0; i < 4; ++i) {
+        block[idx + i * s] = v[i];
+    }
+}
+
+void inverse_transform(inout int block[ZFP_BLOCK_SIZE])
+{
+    // Transform along z
+    for (uint y = 0; y < 4; ++y) {
+        for (uint x = 0; x < 4; ++x) {
+            inverse_lift(block, 16, x + 4 * y);
+        }
+    }
+    // Transform along y
+    for (uint x = 0; x < 4; ++x) {
+        for (uint z = 0; z < 4; ++z) {
+            inverse_lift(block, 4, 16 * z + x);
+        }
+    }
+    // Transform along x
+    for (uint z = 0; z < 4; ++z) {
+        for (uint y = 0; y < 4; ++y) {
+            inverse_lift(block, 1, 4 * y + 16 * z);
+        }
+    }
+}
+
+void decompress_block(in BlockReader reader, inout float decompressed_block[ZFP_BLOCK_SIZE])
+{
+    // Note: not porting over the int decompression support from ZFP CUDA
+    // and only supporting float32 data
+    uint s_cont = read_bit(reader);
+    if (s_cont != 0) {
+        // Hard-coded for float32
+        const uint ebits = 9;
+        const uint ebias = 127;
+
+        const int emax = int(read_bits(reader, ebits - 1).lo - ebias);
+        uint block_max_bits = max_bits - ebits;
+
+        uint uint_block[ZFP_BLOCK_SIZE];
+        decode_ints(reader, block_max_bits, uint_block);
+
+        int int_block[ZFP_BLOCK_SIZE];
+        for (uint i = 0; i < ZFP_BLOCK_SIZE; ++i) {
+            int_block[ZFP_PERM3D[i]] = uint2int(uint_block[i]);
+        }
+
+        inverse_transform(int_block);
+        const float inv_w = ldexp(1.f, emax - 30);
+
+        for (uint i = 0; i < ZFP_BLOCK_SIZE; ++i) {
+            decompressed_block[i] = inv_w * float(int_block[i]);
+        }
+    }
+}
+
+

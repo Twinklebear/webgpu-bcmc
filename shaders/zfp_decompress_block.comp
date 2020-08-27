@@ -1,0 +1,40 @@
+#version 450 core
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+#include "zfp_decompress.comp"
+
+layout(set = 0, binding = 2, std430) buffer Decompressed
+{
+    float decompressed[];
+};
+
+layout(set = 0, binding = 3, std430) buffer BlockIDs
+{
+    uint block_ids[];
+};
+
+// Note: should just make a bind group layout which maps all the cache params
+// and place it on a separate set
+layout(set = 0, binding = 4, std430) buffer CachedItemSlots
+{
+    uint cached_item_slots[];
+};
+
+layout(set = 1, binding = 0) uniform DecompressBlockOffset
+{
+    uint start_block_offset;
+};
+
+void main(void)
+{
+    const uint block_index = block_ids[start_block_offset + gl_GlobalInvocationID.x];
+    const uint cache_location = cached_item_slots[block_index];
+    BlockReader reader = create_block_reader(block_index);
+    float decompressed_block[ZFP_BLOCK_SIZE];
+    decompress_block(reader, decompressed_block);
+    for (uint i = 0; i < ZFP_BLOCK_SIZE; ++i) {
+        decompressed[cache_location * 64 + i] = decompressed_block[i];
+    }
+}
+

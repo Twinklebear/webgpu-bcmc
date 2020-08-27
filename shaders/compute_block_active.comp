@@ -1,0 +1,62 @@
+#version 450 core
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+    uint max_bits;
+    float isovalue;
+};
+
+layout(set = 0, binding = 1, std430) buffer BlockRanges
+{
+    vec2 block_ranges[];
+};
+
+layout(set = 0, binding = 2, std430) buffer BlockActive
+{
+    uint block_active[];
+};
+
+void main(void)
+{
+    const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+    const uint block_id = gl_GlobalInvocationID.x + n_blocks.x
+        * (gl_GlobalInvocationID.y + n_blocks.y * gl_GlobalInvocationID.z);
+
+    block_active[block_id] = 0;
+    // A block is active if its range contains the isovalue, or any of its
+    // neighbors to the negative side (those who have this block as part of their
+    // dual grid) contain the isovalue.
+    const vec2 range = block_ranges[block_id];
+    if (isovalue >= range.x && isovalue <= range.y) {
+        block_active[block_id] = 1;
+    } else {
+        // Check if any of our neighbors need us to interpolate with
+        for (int k = -1; k < 2; ++k) {
+            for (int j = -1; j < 2; ++j) {
+                for (int i = -1; i < 2; ++i) {
+                    const ivec3 neighbor = ivec3(i, j, k); 
+                    const ivec3 coords = ivec3(gl_GlobalInvocationID) + neighbor;
+                    if (neighbor == ivec3(0) || any(lessThan(coords, ivec3(0)))
+                        || any(greaterThanEqual(coords, n_blocks)))
+                    {
+                        continue;
+                    }
+                    const int neighbor_id =
+                        coords.x + int(n_blocks.x) * (coords.y + int(n_blocks.y) * coords.z);
+                    const vec2 block_range = block_ranges[neighbor_id];
+                    const vec2 union_range = vec2(min(range.x, block_range.x), max(range.y, block_range.y));
+                    if (isovalue >= union_range.x && isovalue <= union_range.y) {
+                        block_active[block_id] = 1;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+

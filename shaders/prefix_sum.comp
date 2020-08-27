@@ -1,0 +1,55 @@
+#version 450 core
+
+// See https://www.eecs.umich.edu/courses/eecs570/hw/parprefix.pdf
+
+layout(local_size_x = BLOCK_SIZE / 2) in;
+
+layout(set = 0, binding = 0, std430) buffer Data {
+    uint vals[];
+};
+
+layout(set = 0, binding = 1, std430) buffer BlockSums {
+    uint block_sums[];
+};
+
+shared uint chunk[BLOCK_SIZE];
+
+void main(void) {
+    chunk[2 * gl_LocalInvocationID.x] = vals[2 * gl_GlobalInvocationID.x];
+    chunk[2 * gl_LocalInvocationID.x + 1] = vals[2 * gl_GlobalInvocationID.x + 1];
+
+    uint offs = 1;
+    // Reduce step up tree
+    for (int d = BLOCK_SIZE >> 1; d > 0; d = d >> 1) {
+        barrier();
+        if (gl_LocalInvocationID.x < d) {
+            uint a = offs * (2 * gl_LocalInvocationID.x + 1) - 1;
+            uint b = offs * (2 * gl_LocalInvocationID.x + 2) - 1;
+            chunk[b] += chunk[a];
+        }
+        offs = offs << 1;
+    }
+
+    if (gl_LocalInvocationID.x == 0) {
+        block_sums[gl_WorkGroupID.x] = chunk[BLOCK_SIZE - 1];
+        chunk[BLOCK_SIZE - 1] = 0;
+    }
+
+    // Sweep down the tree to finish the scan
+    for (int d = 1; d < BLOCK_SIZE; d = d << 1) {
+        offs = offs >> 1;
+        barrier();
+        if (gl_LocalInvocationID.x < d) {
+            uint a = offs * (2 * gl_LocalInvocationID.x + 1) - 1;
+            uint b = offs * (2 * gl_LocalInvocationID.x + 2) - 1;
+            const uint tmp = chunk[a];
+            chunk[a] = chunk[b];
+            chunk[b] += tmp;
+        }
+    }
+
+    barrier();
+    vals[2 * gl_GlobalInvocationID.x] = chunk[2 * gl_LocalInvocationID.x];
+    vals[2 * gl_GlobalInvocationID.x + 1] = chunk[2 * gl_LocalInvocationID.x + 1];
+}
+

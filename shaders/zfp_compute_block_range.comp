@@ -1,0 +1,58 @@
+#version 450 core
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+#include "zfp_decompress.comp"
+
+// Note: This could really be done by the file format or server ahead of time,
+// instead of having the client do a preprocess to compute these ranges
+layout(set = 0, binding = 2, std430) buffer BlockRanges
+{
+    vec2 block_ranges[];
+};
+
+void main(void)
+{
+    const uint block_index = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+    const uint total_blocks = padded_dims.x * padded_dims.y * padded_dims.z / 64;
+
+    if (block_index >= total_blocks) {
+        return;
+    }
+
+    BlockReader reader = create_block_reader(block_index);
+    float decompressed_block[ZFP_BLOCK_SIZE];
+    decompress_block(reader, decompressed_block);
+
+    // No support for strided volumes
+    const uvec3 stride = uvec3(1, volume_dims.x, volume_dims.x * volume_dims.y);
+
+    // Should always be 4 right? not sure why the CUDA version computes
+    // it from the padded dims
+    uvec3 nblocks;
+    nblocks.x = padded_dims.x >> 2;
+    nblocks.y = padded_dims.y >> 2;
+    nblocks.z = padded_dims.z >> 2;
+
+    uvec3 block;
+    block.x = (block_index % nblocks.x) * 4;
+    block.y = ((block_index / nblocks.x) % nblocks.y) * 4;
+    block.z = (block_index / (nblocks.x * nblocks.y)) * 4;
+
+    vec2 block_range = vec2(1e20f, -1e20f);
+    bvec3 partial = greaterThan(block + 4, volume_dims.xyz);
+    uvec3 partial_size = uvec3(partial.x ? volume_dims.x - block.x : 4,
+            partial.y ? volume_dims.y - block.y : 4,
+            partial.z ? volume_dims.z - block.z : 4);
+    for (uint z = 0; z < partial_size.z; ++z) {
+        for (uint y = 0; y < partial_size.y; ++y) {
+            for (uint x = 0; x < partial_size.x; ++x) {
+                block_range.x = min(block_range.x, decompressed_block[16 * z + 4 * y + x]);
+                block_range.y = max(block_range.y, decompressed_block[16 * z + 4 * y + x]);
+            }
+        }
+    }
+    block_ranges[block_index] = block_range;
+}
+
+
