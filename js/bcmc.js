@@ -1,6 +1,13 @@
 (async () => {
     var adapter = await navigator.gpu.requestAdapter();
-    var device = await adapter.requestDevice();
+
+    // TODO: Waiting on Chrome Canary to support passing these limits through
+    var gpuDeviceDesc = {
+        limits: {
+            maxStorageBuffersPerShaderStage: 8,
+        }
+    };
+    var device = await adapter.requestDevice(gpuDeviceDesc);
 
     var canvas = document.getElementById("webgpu-canvas");
     var context = canvas.getContext("gpupresent");
