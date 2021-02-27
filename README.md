@@ -14,6 +14,9 @@ the API to request higher limits (which are available on desktop and laptop hard
 Please see https://bugs.chromium.org/p/dawn/issues/detail?id=519 for some additional
 information.
 
+Note: I think this is now resolved, however the application also makes use of dynamic
+storage buffers which are also now temporarily disabled in Chrome. See [issue 429](https://bugs.chromium.org/p/dawn/issues/detail?id=429)
+
 A live demo will be put online along with final code polish and updates done once this
 issue is resolved.
 

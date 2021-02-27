@@ -6,3 +6,4 @@ models/
 *.wasm
 js/liblas.js
 js/liblas_wrapper.js
+.DS_Store

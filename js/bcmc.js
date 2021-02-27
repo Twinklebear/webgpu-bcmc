@@ -3,7 +3,7 @@
 
     // TODO: Waiting on Chrome Canary to support passing these limits through
     var gpuDeviceDesc = {
-        limits: {
+        nonGuaranteedLimits: {
             maxStorageBuffersPerShaderStage: 8,
         }
     };

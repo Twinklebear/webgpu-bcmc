@@ -5,7 +5,7 @@ import os
 import subprocess
 
 if len(sys.argv) < 2:
-    print("Usage <glslc> <shaders...>")
+    print("Usage <glslc>")
 
 glslc = sys.argv[1]
 output = "embedded_shaders.js"
