@@ -2,7 +2,7 @@ var RadixSorter = function(device)
 {
     this.device = device;
 
-    this.fence = device.defaultQueue.createFence();
+    this.fence = device.queue.createFence();
     this.fenceValue = 1;
 
     this.bgLayout = this.device.createBindGroupLayout({
@@ -80,7 +80,7 @@ var RadixSorter = function(device)
         layout: this.device.createPipelineLayout({
             bindGroupLayouts: [this.bgLayout, this.radixSortBGLayout]
         }),
-        computeStage: {
+        compute: {
             module: this.device.createShaderModule({code: radix_sort_chunk_comp_spv}),
             entryPoint: "main"
         }
@@ -90,7 +90,7 @@ var RadixSorter = function(device)
         layout: this.device.createPipelineLayout({
             bindGroupLayouts: [this.bgLayout, this.mergeBGLayout, this.numWorkGroupsBGLayout]
         }),
-        computeStage: {
+        compute: {
             module: this.device.createShaderModule({code: merge_sorted_chunks_comp_spv}),
             entryPoint: "main"
         }
@@ -100,7 +100,7 @@ var RadixSorter = function(device)
         layout: this.device.createPipelineLayout({
             bindGroupLayouts: [this.bgLayout, this.reverseBGLayout]
         }),
-        computeStage: {
+        compute: {
             module: this.device.createShaderModule({code: reverse_buffer_comp_spv}),
             entryPoint: "main"
         }
@@ -306,7 +306,7 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse)
         pass.dispatch(chunkCount / (2 << i), 1, 1);
     }
     pass.endPass();
-    this.device.defaultQueue.submit([commandEncoder.finish()]);
+    this.device.queue.submit([commandEncoder.finish()]);
 
     var commandEncoder = this.device.createCommandEncoder();
     if (reverse) {
@@ -327,8 +327,8 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse)
         commandEncoder.copyBufferToBuffer(scratch.values, readbackOffset * 4, buffers.values, 0, size * 4);
     }
 
-    this.device.defaultQueue.submit([commandEncoder.finish()]);
-    this.device.defaultQueue.signal(this.fence, this.fenceValue);
+    this.device.queue.submit([commandEncoder.finish()]);
+    this.device.queue.signal(this.fence, this.fenceValue);
     await this.fence.onCompletion(this.fenceValue);
     this.fenceValue += 1;
 

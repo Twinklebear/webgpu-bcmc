@@ -7,3 +7,4 @@ models/
 js/liblas.js
 js/liblas_wrapper.js
 .DS_Store
+glslc.exe

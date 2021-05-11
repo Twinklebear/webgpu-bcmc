@@ -15,7 +15,7 @@ var CompressedMarchingCubes = function(device)
     this.numBlocksWithVerticesStorage = 0;
     this.numVerticesStorage = 0;
 
-    this.fence = device.defaultQueue.createFence();
+    this.fence = device.queue.createFence();
     this.fenceValue = 1;
 
     var triTableBuf = device.createBuffer({
@@ -50,7 +50,7 @@ var CompressedMarchingCubes = function(device)
         layout: device.createPipelineLayout({
             bindGroupLayouts: [this.computeBlockRangeBGLayout]
         }),
-        computeStage: {
+        compute: {
             module: device.createShaderModule({code: zfp_compute_block_range_comp_spv}),
             entryPoint: "main"
         }
@@ -79,7 +79,7 @@ var CompressedMarchingCubes = function(device)
         layout: device.createPipelineLayout({
             bindGroupLayouts: [this.computeActiveBlocksBGLayout]
         }),
-        computeStage: {
+        compute: {
             module: device.createShaderModule({code: compute_block_active_comp_spv}),
             entryPoint: "main"
         }
@@ -129,7 +129,7 @@ var CompressedMarchingCubes = function(device)
         layout: device.createPipelineLayout({
             bindGroupLayouts: [this.decompressBlocksBGLayout, this.decompressBlocksStartOffsetBGLayout]
         }),
-        computeStage: {
+        compute: {
             module: device.createShaderModule({code: zfp_decompress_block_comp_spv}),
             entryPoint: "main"
         }
@@ -212,7 +212,7 @@ var CompressedMarchingCubes = function(device)
         layout: device.createPipelineLayout({
             bindGroupLayouts: [this.computeBlockVertsInfoBGLayout, this.computeBlockHasVerticesBGLayout],
         }),
-        computeStage: {
+        compute: {
             module: device.createShaderModule({code: compute_block_has_vertices_comp_spv}),
             entryPoint: "main"
         }
@@ -221,7 +221,7 @@ var CompressedMarchingCubes = function(device)
         layout: device.createPipelineLayout({
             bindGroupLayouts: [this.computeBlockVertsInfoBGLayout, this.computeBlockVerticesBGLayout],
         }),
-        computeStage: {
+        compute: {
             module: device.createShaderModule({code: compute_block_voxel_num_verts_comp_spv}),
             entryPoint: "main"
         }
@@ -234,7 +234,7 @@ var CompressedMarchingCubes = function(device)
                 this.computeBlockVerticesBGLayout,
                 this.computeBlockVerticesOutputBGLayout],
         }),
-        computeStage: {
+        compute: {
             module: device.createShaderModule({code: compute_block_vertices_comp_spv}),
             entryPoint: "main"
         }
@@ -437,7 +437,7 @@ CompressedMarchingCubes.prototype.computeBlockRanges = async function() {
     pass.dispatch(this.numWorkGroups, 1, 1);
 
     pass.endPass();
-    this.device.defaultQueue.submit([commandEncoder.finish()]);
+    this.device.queue.submit([commandEncoder.finish()]);
 }
 
 CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perfTracker)
@@ -479,7 +479,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
 
     var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(this.uploadIsovalueBuf, 0, this.volumeInfoBuffer, 52, 4);
-    this.device.defaultQueue.submit([commandEncoder.finish()]);
+    this.device.queue.submit([commandEncoder.finish()]);
 
     // Compute list of active blocks
     var start = performance.now();
@@ -585,7 +585,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
     commandEncoder.copyBufferToBuffer(this.blockHasVertices, 0,
         this.blockHasVertsOffsets, 0,
         this.numActiveBlocks * 4);
-    this.device.defaultQueue.submit([commandEncoder.finish()]);
+    this.device.queue.submit([commandEncoder.finish()]);
 
     var numBlocksWithVertices = await this.blockWithVerticesScanner.scan(this.numActiveBlocks);
     console.log(`Of ${numActiveBlocks} active, only ${numBlocksWithVertices} will output vertices`);
@@ -682,7 +682,7 @@ CompressedMarchingCubes.prototype.computeActiveBlocks = async function()
     pass.endPass();
     commandEncoder.copyBufferToBuffer(this.blockActiveBuffer, 0,
         this.activeBlockOffsets, 0, this.totalBlocks * 4);
-    this.device.defaultQueue.submit([commandEncoder.finish()]);
+    this.device.queue.submit([commandEncoder.finish()]);
 
     // Compute total number of active voxels and offsets for each in the compact buffer
     var start = performance.now();
@@ -767,10 +767,10 @@ CompressedMarchingCubes.prototype.decompressBlocks = async function(nBlocksToDec
         pass.setBindGroup(1, decompressBlocksStartOffsetBG, [i * 256]);
         pass.dispatch(numWorkGroups, 1, 1);
         pass.endPass();
-        this.device.defaultQueue.submit([commandEncoder.finish()]);
+        this.device.queue.submit([commandEncoder.finish()]);
     }
 
-    this.device.defaultQueue.signal(this.fence, this.fenceValue);
+    this.device.queue.signal(this.fence, this.fenceValue);
     await this.fence.onCompletion(this.fenceValue);
     dispatchChunkOffsetsBuf.destroy();
     this.fenceValue += 1;
@@ -838,9 +838,9 @@ CompressedMarchingCubes.prototype.computeBlockHasVertices = async function()
     pass.setBindGroup(1, blockHasVerticesBG);
     pass.dispatch(this.numActiveBlocks, 1, 1);
     pass.endPass();
-    this.device.defaultQueue.submit([commandEncoder.finish()]);
+    this.device.queue.submit([commandEncoder.finish()]);
 
-    this.device.defaultQueue.signal(this.fence, this.fenceValue);
+    this.device.queue.signal(this.fence, this.fenceValue);
     await this.fence.onCompletion(this.fenceValue);
     this.fenceValue += 1;
 }
@@ -872,7 +872,7 @@ CompressedMarchingCubes.prototype.computeBlockVertexCounts = async function()
     pass.setBindGroup(1, this.blockVertexOffsetsBG);
     pass.dispatch(this.numBlocksWithVertices, 1, 1);
     pass.endPass();
-    this.device.defaultQueue.submit([commandEncoder.finish()]);
+    this.device.queue.submit([commandEncoder.finish()]);
 
     var total = await this.blockVertexOffsetsScanner.scan(this.numBlocksWithVertices);
     return total;
@@ -923,10 +923,10 @@ CompressedMarchingCubes.prototype.computeVertices = async function()
         pass.setBindGroup(2, bindGroup, [i * 256]);
         pass.dispatch(numWorkGroups, 1, 1);
         pass.endPass();
-        this.device.defaultQueue.submit([commandEncoder.finish()]);
+        this.device.queue.submit([commandEncoder.finish()]);
     }
 
-    this.device.defaultQueue.signal(this.fence, this.fenceValue);
+    this.device.queue.signal(this.fence, this.fenceValue);
     await this.fence.onCompletion(this.fenceValue);
     dispatchChunkOffsetsBuf.destroy();
     this.fenceValue += 1;
