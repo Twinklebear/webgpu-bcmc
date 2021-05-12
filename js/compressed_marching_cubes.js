@@ -119,8 +119,7 @@ var CompressedMarchingCubes = function(device)
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
-                hasDynamicOffset: true
+                type: "uniform-buffer"
             }
         ]
     });
@@ -197,8 +196,7 @@ var CompressedMarchingCubes = function(device)
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
-                hasDynamicOffset: true
+                type: "uniform-buffer"
             },
             {
                 binding: 1,
@@ -742,20 +740,6 @@ CompressedMarchingCubes.prototype.decompressBlocks = async function(nBlocksToDec
     }
     dispatchChunkOffsetsBuf.unmap();
 
-    var decompressBlocksStartOffsetBG = this.device.createBindGroup({
-        layout: this.decompressBlocksStartOffsetBGLayout,
-        entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: dispatchChunkOffsetsBuf,
-                    size: 4,
-                    offset: 0
-                }
-            }
-        ]
-    });
-
     // We execute these chunks in separate submissions to avoid having them
     // execute all at once and trigger a TDR if we're decompressing a large amount of data
     for (var i = 0; i < numChunks; ++i) {
@@ -764,7 +748,21 @@ CompressedMarchingCubes.prototype.decompressBlocks = async function(nBlocksToDec
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.decompressBlocksPipeline);
         pass.setBindGroup(0, decompressBlocksBG);
-        pass.setBindGroup(1, decompressBlocksStartOffsetBG, [i * 256]);
+        // Have to create bind group here because dynamic offsets are not allowed
+        var decompressBlocksStartOffsetBG = this.device.createBindGroup({
+            layout: this.decompressBlocksStartOffsetBGLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: {
+                        buffer: dispatchChunkOffsetsBuf,
+                        size: 4,
+                        offset: i * 256
+                    }
+                }
+            ]
+        });
+        pass.setBindGroup(1, decompressBlocksStartOffsetBG);
         pass.dispatch(numWorkGroups, 1, 1);
         pass.endPass();
         this.device.queue.submit([commandEncoder.finish()]);
@@ -892,26 +890,6 @@ CompressedMarchingCubes.prototype.computeVertices = async function()
     }
     dispatchChunkOffsetsBuf.unmap();
 
-    var bindGroup = this.device.createBindGroup({
-        layout: this.computeBlockVerticesOutputBGLayout,
-        entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: dispatchChunkOffsetsBuf,
-                    size: 4,
-                    offset: 0
-                }
-            },
-            {
-                binding: 1,
-                resource: {
-                    buffer: this.vertexBuffer
-                }
-            }
-        ]
-    });
-
     // Chunk up dispatch to avoid hitting TDR
     for (var i = 0; i < numChunks; ++i) {
         var numWorkGroups = Math.min(this.numBlocksWithVertices - i * this.maxDispatchSize, this.maxDispatchSize);
@@ -920,7 +898,26 @@ CompressedMarchingCubes.prototype.computeVertices = async function()
         pass.setPipeline(this.computeBlockVerticesPipeline);
         pass.setBindGroup(0, this.computeBlockVertexInfoBG);
         pass.setBindGroup(1, this.blockVertexOffsetsBG);
-        pass.setBindGroup(2, bindGroup, [i * 256]);
+        var bindGroup = this.device.createBindGroup({
+            layout: this.computeBlockVerticesOutputBGLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: {
+                        buffer: dispatchChunkOffsetsBuf,
+                        size: 4,
+                        offset: i * 256
+                    }
+                },
+                {
+                    binding: 1,
+                    resource: {
+                        buffer: this.vertexBuffer
+                    }
+                }
+            ]
+        });
+        pass.setBindGroup(2, bindGroup);
         pass.dispatch(numWorkGroups, 1, 1);
         pass.endPass();
         this.device.queue.submit([commandEncoder.finish()]);

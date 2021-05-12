@@ -36,8 +36,7 @@ var ExclusiveScanPipeline = function (device) {
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
-        type: "storage-buffer",
-        hasDynamicOffset: true,
+        type: "storage-buffer"
       },
       {
         binding: 1,
@@ -173,26 +172,6 @@ var ExclusiveScanner = function (scanPipeline, gpuBuffer, alignedSize) {
       GPUBufferUsage.COPY_DST,
   });
 
-  this.scanBlocksBindGroup = scanPipeline.device.createBindGroup({
-    layout: this.scanPipeline.scanBlocksLayout,
-    entries: [
-      {
-        binding: 0,
-        resource: {
-          buffer: this.inputBuf,
-          size: Math.min(this.scanPipeline.maxScanSize, this.inputSize) * 4,
-          offset: 0,
-        },
-      },
-      {
-        binding: 1,
-        resource: {
-          buffer: blockSumBuf,
-        },
-      },
-    ],
-  });
-
   this.scanBlockResultsBindGroup = scanPipeline.device.createBindGroup({
     layout: this.scanPipeline.scanBlockResultsLayout,
     entries: [
@@ -210,31 +189,6 @@ var ExclusiveScanner = function (scanPipeline, gpuBuffer, alignedSize) {
       },
     ],
   });
-
-  // Bind groups for processing the remainder if the aligned size isn't
-  // an even multiple of the max scan size
-  this.remainderScanBlocksBindGroup = null;
-  if (this.inputSize % this.scanPipeline.maxScanSize) {
-    this.remainderScanBlocksBindGroup = scanPipeline.device.createBindGroup({
-      layout: this.scanPipeline.scanBlocksLayout,
-      entries: [
-        {
-          binding: 0,
-          resource: {
-            buffer: this.inputBuf,
-            size: (this.inputSize % this.scanPipeline.maxScanSize) * 4,
-            offset: 0,
-          },
-        },
-        {
-          binding: 1,
-          resource: {
-            buffer: blockSumBuf,
-          },
-        },
-      ],
-    });
-  }
 };
 
 ExclusiveScanner.prototype.scan = async function (dataSize) {
@@ -263,9 +217,50 @@ ExclusiveScanner.prototype.scan = async function (dataSize) {
       (this.inputSize - i * this.scanPipeline.maxScanSize) / ScanBlockSize,
       ScanBlockSize
     );
-
-    var scanBlockBG = this.scanBlocksBindGroup;
+    var scanBlockBG = this.scanPipeline.device.createBindGroup({
+      layout: this.scanPipeline.scanBlocksLayout,
+      entries: [
+        {
+          binding: 0,
+          resource: {
+            buffer: this.inputBuf,
+            size: Math.min(this.scanPipeline.maxScanSize, this.inputSize) * 4,
+            offset: this.offsets[i],
+          },
+        },
+        {
+          binding: 1,
+          resource: {
+            buffer: this.blockSumBuf,
+          },
+        },
+      ],
+    });
     if (nWorkGroups < ScanBlockSize) {
+      // Bind groups for processing the remainder if the aligned size isn't
+      // an even multiple of the max scan size
+      this.remainderScanBlocksBindGroup = null;
+      if (this.inputSize % this.scanPipeline.maxScanSize) {
+        this.remainderScanBlocksBindGroup = this.scanPipeline.device.createBindGroup({
+          layout: this.scanPipeline.scanBlocksLayout,
+          entries: [
+            {
+              binding: 0,
+              resource: {
+                buffer: this.inputBuf,
+                size: (this.inputSize % this.scanPipeline.maxScanSize) * 4,
+                offset: this.offsets[i],
+              },
+            },
+            {
+              binding: 1,
+              resource: {
+                buffer: this.blockSumBuf,
+              },
+            },
+          ],
+        });
+      }
       scanBlockBG = this.remainderScanBlocksBindGroup;
     }
 
@@ -281,7 +276,7 @@ ExclusiveScanner.prototype.scan = async function (dataSize) {
     var computePass = commandEncoder.beginComputePass();
 
     computePass.setPipeline(this.scanPipeline.scanBlocksPipeline);
-    computePass.setBindGroup(0, scanBlockBG, this.offsets, i, 1);
+    computePass.setBindGroup(0, scanBlockBG);
     computePass.dispatch(nWorkGroups, 1, 1);
 
     computePass.setPipeline(this.scanPipeline.scanBlockResultsPipeline);
@@ -289,7 +284,7 @@ ExclusiveScanner.prototype.scan = async function (dataSize) {
     computePass.dispatch(1, 1, 1);
 
     computePass.setPipeline(this.scanPipeline.addBlockSumsPipeline);
-    computePass.setBindGroup(0, scanBlockBG, this.offsets, i, 1);
+    computePass.setBindGroup(0, scanBlockBG);
     computePass.dispatch(nWorkGroups, 1, 1);
 
     computePass.endPass();

@@ -17,20 +17,17 @@ var StreamCompact = function (device) {
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
-        type: "storage-buffer",
-        hasDynamicOffset: true,
+        type: "storage-buffer"
       },
       {
         binding: 1,
         visibility: GPUShaderStage.COMPUTE,
-        type: "storage-buffer",
-        hasDynamicOffset: true,
+        type: "storage-buffer"
       },
       {
         binding: 2,
         visibility: GPUShaderStage.COMPUTE,
-        type: "uniform-buffer",
-        hasDynamicOffset: true,
+        type: "uniform-buffer"
       },
       {
         binding: 3,
@@ -73,62 +70,33 @@ StreamCompact.prototype.compactActiveIDs = async function (
     }
     compactPassOffset.unmap();
   }
-
-  var streamCompactBG = this.device.createBindGroup({
-    layout: this.streamCompactBGLayout,
-    entries: [
-      {
-        binding: 0,
-        resource: {
-          buffer: isActiveBuffer,
-          size: 4 * Math.min(numElements, this.maxDispatchSize),
-          offset: 0,
-        },
-      },
-      {
-        binding: 1,
-        resource: {
-          buffer: offsetsBuffer,
-          size: 4 * Math.min(numElements, this.maxDispatchSize),
-          offset: 0,
-        },
-      },
-      {
-        binding: 2,
-        resource: {
-          buffer: compactPassOffset,
-          size: 4,
-          offset: 0,
-        },
-      },
-      {
-        binding: 3,
-        resource: {
-          buffer: outputBuffer,
-        },
-      },
-    ],
-  });
-
-  var streamCompactRemainderBG = null;
-  if (numElements % this.maxDispatchSize) {
-    streamCompactRemainderBG = this.device.createBindGroup({
+  var commandEncoder = this.device.createCommandEncoder();
+  var pass = commandEncoder.beginComputePass();
+  pass.setPipeline(this.streamCompactPipeline);
+  for (var i = 0; i < numChunks; ++i) {
+    var numWorkGroups = Math.min(
+      numElements - i * this.maxDispatchSize,
+      this.maxDispatchSize
+    );
+    var offset = i * this.maxDispatchSize * 4;
+    // Have to create bind groups here because dynamic offsets are not allowed
+    var streamCompactBG = this.device.createBindGroup({
       layout: this.streamCompactBGLayout,
       entries: [
         {
           binding: 0,
           resource: {
             buffer: isActiveBuffer,
-            size: 4 * (numElements % this.maxDispatchSize),
-            offset: 0,
+            size: 4 * Math.min(numElements, this.maxDispatchSize),
+            offset: offset,
           },
         },
         {
           binding: 1,
           resource: {
             buffer: offsetsBuffer,
-            size: 4 * (numElements % this.maxDispatchSize),
-            offset: 0,
+            size: 4 * Math.min(numElements, this.maxDispatchSize),
+            offset: offset,
           },
         },
         {
@@ -136,7 +104,7 @@ StreamCompact.prototype.compactActiveIDs = async function (
           resource: {
             buffer: compactPassOffset,
             size: 4,
-            offset: 0,
+            offset: i * 256,
           },
         },
         {
@@ -147,21 +115,49 @@ StreamCompact.prototype.compactActiveIDs = async function (
         },
       ],
     });
-  }
-
-  var commandEncoder = this.device.createCommandEncoder();
-  var pass = commandEncoder.beginComputePass();
-  pass.setPipeline(this.streamCompactPipeline);
-  for (var i = 0; i < numChunks; ++i) {
-    var numWorkGroups = Math.min(
-      numElements - i * this.maxDispatchSize,
-      this.maxDispatchSize
-    );
-    var offset = i * this.maxDispatchSize * 4;
+  
+    var streamCompactRemainderBG = null;
+    if (numElements % this.maxDispatchSize) {
+      streamCompactRemainderBG = this.device.createBindGroup({
+        layout: this.streamCompactBGLayout,
+        entries: [
+          {
+            binding: 0,
+            resource: {
+              buffer: isActiveBuffer,
+              size: 4 * (numElements % this.maxDispatchSize),
+              offset: offset,
+            },
+          },
+          {
+            binding: 1,
+            resource: {
+              buffer: offsetsBuffer,
+              size: 4 * (numElements % this.maxDispatchSize),
+              offset: offset,
+            },
+          },
+          {
+            binding: 2,
+            resource: {
+              buffer: compactPassOffset,
+              size: 4,
+              offset: i * 256,
+            },
+          },
+          {
+            binding: 3,
+            resource: {
+              buffer: outputBuffer,
+            },
+          },
+        ],
+      });
+    }
     if (numWorkGroups == this.maxDispatchSize) {
-      pass.setBindGroup(0, streamCompactBG, [offset, offset, i * 256]);
+      pass.setBindGroup(0, streamCompactBG);
     } else {
-      pass.setBindGroup(0, streamCompactRemainderBG, [offset, offset, i * 256]);
+      pass.setBindGroup(0, streamCompactRemainderBG);
     }
     pass.dispatch(numWorkGroups, 1, 1);
   }

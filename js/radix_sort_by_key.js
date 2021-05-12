@@ -60,8 +60,7 @@ var RadixSorter = function(device)
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
-                hasDynamicOffset: true
+                type: "uniform-buffer"
             }
         ]
     });
@@ -262,20 +261,6 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse)
         }),
     ];
 
-    var numWorkGroupsBG = this.device.createBindGroup({
-        layout: this.numWorkGroupsBGLayout,
-        entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: numWorkGroupsBuf,
-                    size: 4,
-                    offset: 0
-                }
-            }
-        ]
-    });
-
     var reverseBG = this.device.createBindGroup({
         layout: this.reverseBGLayout,
         entries: [
@@ -301,8 +286,21 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse)
     pass.setPipeline(this.mergePipeline);
     pass.setBindGroup(0, infoBindGroup);
     for (var i = 0; i < numMergeSteps; ++i) {
+        var numWorkGroupsBG = this.device.createBindGroup({
+            layout: this.numWorkGroupsBGLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: {
+                        buffer: numWorkGroupsBuf,
+                        size: 4,
+                        offset: i * 256
+                    }
+                }
+            ]
+        });
         pass.setBindGroup(1, mergeBindGroups[i % 2]);
-        pass.setBindGroup(2, numWorkGroupsBG, [i * 256]);
+        pass.setBindGroup(2, numWorkGroupsBG);
         pass.dispatch(chunkCount / (2 << i), 1, 1);
     }
     pass.endPass();
