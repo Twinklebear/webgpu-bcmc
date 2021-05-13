@@ -380,8 +380,6 @@
     isovalue: [],
     totalTime: [],
   };
-  var fence = device.queue.createFence();
-  var fenceValue = 1;
   var once = true;
   while (true) {
     projView = mat4.mul(projView, proj, camera.camera);
@@ -510,10 +508,8 @@
     renderPass.endPass();
     device.queue.submit([commandEncoder.finish()]);
 
-    // Measure render time by waiting for the fence
-    device.queue.signal(fence, fenceValue);
-    await fence.onCompletion(fenceValue);
-    fenceValue += 1;
+    // Measure render time by waiting for the work done
+    await device.queue.onSubmittedWorkDone();
     var end = performance.now();
     numFrames += 1;
     totalTimeMS += end - start;

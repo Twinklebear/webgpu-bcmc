@@ -1,7 +1,5 @@
 var StreamCompact = function (device) {
   this.device = device;
-  this.fence = device.queue.createFence();
-  this.fenceValue = 1;
 
   // Not sure how to query this limit, assuming this size based on OpenGL
   // In a less naive implementation doing some block-based implementation w/
@@ -17,17 +15,17 @@ var StreamCompact = function (device) {
       {
         binding: 0,
         visibility: GPUShaderStage.COMPUTE,
-        type: "storage-buffer"
+        type: "storage-buffer",
       },
       {
         binding: 1,
         visibility: GPUShaderStage.COMPUTE,
-        type: "storage-buffer"
+        type: "storage-buffer",
       },
       {
         binding: 2,
         visibility: GPUShaderStage.COMPUTE,
-        type: "uniform-buffer"
+        type: "uniform-buffer",
       },
       {
         binding: 3,
@@ -115,7 +113,7 @@ StreamCompact.prototype.compactActiveIDs = async function (
         },
       ],
     });
-  
+
     var streamCompactRemainderBG = null;
     if (numElements % this.maxDispatchSize) {
       streamCompactRemainderBG = this.device.createBindGroup({
@@ -163,7 +161,5 @@ StreamCompact.prototype.compactActiveIDs = async function (
   }
   pass.endPass();
   this.device.queue.submit([commandEncoder.finish()]);
-  this.device.queue.signal(this.fence, this.fenceValue);
-  await this.fence.onCompletion(this.fenceValue);
-  this.fenceValue += 1;
+  await this.device.queue.onSubmittedWorkDone();
 };

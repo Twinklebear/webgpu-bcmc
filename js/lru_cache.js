@@ -17,9 +17,6 @@ var LRUCache = function (
   this.elementSize = elementSize;
   this.numNewItems = 0;
 
-  this.fence = device.queue.createFence();
-  this.fenceValue = 1;
-
   this.sorter = new RadixSorter(this.device);
 
   // For each element, track if it's in the cache, and if so where
@@ -393,9 +390,7 @@ LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
     this.cacheSize * 4
   );
   this.device.queue.submit([commandEncoder.finish()]);
-  this.device.queue.signal(this.fence, this.fenceValue);
-  await this.fence.onCompletion(this.fenceValue);
-  this.fenceValue += 1;
+  await this.device.queue.onSubmittedWorkDone();
   var end = performance.now();
   console.log(`Initial aging and mark new items took ${end - start}ms`);
   perfTracker.lruMarkNewItems.push(end - start);
@@ -592,9 +587,7 @@ LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
     );
 
     this.device.queue.submit([commandEncoder.finish()]);
-    this.device.queue.signal(this.fence, this.fenceValue);
-    await this.fence.onCompletion(this.fenceValue);
-    this.fenceValue += 1;
+    await this.device.queue.onSubmittedWorkDone();
 
     this.slotAge.destroy();
     this.slotAge = slotAge;
@@ -711,9 +704,7 @@ LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
   pass.dispatch(numSlotsAvailable, 1, 1);
   pass.endPass();
   this.device.queue.submit([commandEncoder.finish()]);
-  this.device.queue.signal(this.fence, this.fenceValue);
-  await this.fence.onCompletion(this.fenceValue);
-  this.fenceValue += 1;
+  await this.device.queue.onSubmittedWorkDone();
   var end = performance.now();
   console.log(`Prep key/value pairs for sort: ${end - start}ms`);
   perfTracker.lruPrepKeyValue.push(end - start);
@@ -783,9 +774,7 @@ LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
   pass.dispatch(numNewItems, 1, 1);
   pass.endPass();
   this.device.queue.submit([commandEncoder.finish()]);
-  this.device.queue.signal(this.fence, this.fenceValue);
-  await this.fence.onCompletion(this.fenceValue);
-  this.fenceValue += 1;
+  await this.device.queue.onSubmittedWorkDone();
   var end = performance.now();
   console.log(`Writing new item slots took ${end - start}ms`);
   perfTracker.lruWriteNewItems.push(end - start);
@@ -841,9 +830,7 @@ LRUCache.prototype.reset = async function () {
   commandEncoder.copyBufferToBuffer(uploadBuf, 4, this.cacheSizeBuf, 0, 4);
 
   this.device.queue.submit([commandEncoder.finish()]);
-  this.device.queue.signal(this.fence, this.fenceValue);
-  await this.fence.onCompletion(this.fenceValue);
-  this.fenceValue += 1;
+  await this.device.queue.onSubmittedWorkDone();
 
   uploadBuf.destroy();
 };
