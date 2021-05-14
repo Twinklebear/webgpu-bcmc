@@ -51,7 +51,7 @@ var LRUCache = function (
 
   // The age of each slot
   var buf = this.device.createBuffer({
-    size: initialSize * 4,
+    size: initialSize * 4 * 3,
     usage:
       GPUBufferUsage.STORAGE |
       GPUBufferUsage.COPY_SRC |
@@ -59,24 +59,14 @@ var LRUCache = function (
     mappedAtCreation: true,
   });
   // TODO: Just fill with a high value??
-  var m = new Uint32Array(buf.getMappedRange());
+  var m = new Int32Array(buf.getMappedRange());
   for (var i = 0; i < initialSize; ++i) {
-    m[i] = 2 + i;
+    m[i * 3] = 2 + i; // For slot age
+    m[i * 3 + 1] = 1; // For slot availability
+    m[i * 3 + 2] = -1; // For slot ID
   }
   buf.unmap();
-  this.slotAge = buf;
-
-  var buf = this.device.createBuffer({
-    size: initialSize * 4,
-    usage:
-      GPUBufferUsage.STORAGE |
-      GPUBufferUsage.COPY_SRC |
-      GPUBufferUsage.COPY_DST,
-    mappedAtCreation: true,
-  });
-  new Uint32Array(buf.getMappedRange()).fill(1);
-  buf.unmap();
-  this.slotAvailable = buf;
+  this.slotData = buf;
 
   this.slotAvailableOffsets = this.device.createBuffer({
     size: this.scanPipeline.getAlignedSize(initialSize) * 4,
@@ -93,19 +83,6 @@ var LRUCache = function (
       GPUBufferUsage.COPY_SRC |
       GPUBufferUsage.COPY_DST,
   });
-
-  // List of which item is currently in the cache slot, -1 if unnoccupied
-  var buf = this.device.createBuffer({
-    size: initialSize * 4,
-    usage:
-      GPUBufferUsage.STORAGE |
-      GPUBufferUsage.COPY_DST |
-      GPUBufferUsage.COPY_SRC,
-    mappedAtCreation: true,
-  });
-  new Int32Array(buf.getMappedRange()).fill(-1);
-  buf.unmap();
-  this.slotItemIDs = buf;
 
   // Buffer used to pass the previous cache size to lru_cache_init.comp
   this.cacheSizeBuf = this.device.createBuffer({
@@ -149,16 +126,6 @@ var LRUCache = function (
         visibility: GPUShaderStage.COMPUTE,
         type: "storage-buffer",
       },
-      {
-        binding: 3,
-        visibility: GPUShaderStage.COMPUTE,
-        type: "storage-buffer",
-      },
-      {
-        binding: 4,
-        visibility: GPUShaderStage.COMPUTE,
-        type: "storage-buffer",
-      },
     ],
   });
 
@@ -174,25 +141,13 @@ var LRUCache = function (
       {
         binding: 1,
         resource: {
-          buffer: this.slotAge,
+          buffer: this.slotAvailableIDs,
         },
       },
       {
         binding: 2,
         resource: {
-          buffer: this.slotAvailable,
-        },
-      },
-      {
-        binding: 3,
-        resource: {
-          buffer: this.slotAvailableIDs,
-        },
-      },
-      {
-        binding: 4,
-        resource: {
-          buffer: this.slotItemIDs,
+          buffer: this.slotData,
         },
       },
     ],
@@ -472,22 +427,8 @@ LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
       this.totalElements
     );
 
-    var slotAge = this.device.createBuffer({
-      size: newSize * 4,
-      usage:
-        GPUBufferUsage.STORAGE |
-        GPUBufferUsage.COPY_SRC |
-        GPUBufferUsage.COPY_DST,
-    });
-    var slotAvailable = this.device.createBuffer({
-      size: newSize * 4,
-      usage:
-        GPUBufferUsage.STORAGE |
-        GPUBufferUsage.COPY_SRC |
-        GPUBufferUsage.COPY_DST,
-    });
-    var slotItemIDs = this.device.createBuffer({
-      size: newSize * 4,
+    var slotData = this.device.createBuffer({
+      size: newSize * 4 * 3,
       usage:
         GPUBufferUsage.STORAGE |
         GPUBufferUsage.COPY_SRC |
@@ -522,25 +463,13 @@ LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
         {
           binding: 1,
           resource: {
-            buffer: slotAge,
+            buffer: this.slotAvailableIDs,
           },
         },
         {
           binding: 2,
           resource: {
-            buffer: slotAvailable,
-          },
-        },
-        {
-          binding: 3,
-          resource: {
-            buffer: this.slotAvailableIDs,
-          },
-        },
-        {
-          binding: 4,
-          resource: {
-            buffer: slotItemIDs,
+            buffer: slotData,
           },
         },
       ],
@@ -558,25 +487,11 @@ LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
 
     // Copy in the old contents of the buffers to the new ones
     commandEncoder.copyBufferToBuffer(
-      this.slotAge,
+      this.slotData,
       0,
-      slotAge,
+      slotData,
       0,
-      this.cacheSize * 4
-    );
-    commandEncoder.copyBufferToBuffer(
-      this.slotAvailable,
-      0,
-      slotAvailable,
-      0,
-      this.cacheSize * 4
-    );
-    commandEncoder.copyBufferToBuffer(
-      this.slotItemIDs,
-      0,
-      slotItemIDs,
-      0,
-      this.cacheSize * 4
+      this.cacheSize * 4 * 3
     );
     commandEncoder.copyBufferToBuffer(
       this.cache,
@@ -589,14 +504,8 @@ LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
 
-    this.slotAge.destroy();
-    this.slotAge = slotAge;
-
-    this.slotAvailable.destroy();
-    this.slotAvailable = slotAvailable;
-
-    this.slotItemIDs.destroy();
-    this.slotItemIDs = slotItemIDs;
+    this.slotData.destroy();
+    this.slotData = slotData;
 
     this.cache.destroy();
     this.cache = cache;
@@ -728,25 +637,13 @@ LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
       {
         binding: 1,
         resource: {
-          buffer: this.slotAge,
+          buffer: sortedIDs,
         },
       },
       {
         binding: 2,
         resource: {
-          buffer: this.slotAvailable,
-        },
-      },
-      {
-        binding: 3,
-        resource: {
-          buffer: sortedIDs,
-        },
-      },
-      {
-        binding: 4,
-        resource: {
-          buffer: this.slotItemIDs,
+          buffer: this.slotData,
         },
       },
     ],
@@ -811,6 +708,17 @@ LRUCache.prototype.reset = async function () {
 
   // Also need to clear the cached item slots array, just copy the slot item
   // ID array over it, which is also filled with -1
+  var buf = this.device.createBuffer({
+    size: this.cacheSize * 4,
+    usage:
+      GPUBufferUsage.STORAGE |
+      GPUBufferUsage.COPY_DST |
+      GPUBufferUsage.COPY_SRC,
+    mappedAtCreation: true,
+  });
+  new Int32Array(buf.getMappedRange()).fill(-1);
+  buf.unmap();
+  negativeBuffer = buf;
   var numCopies = Math.ceil(this.totalElements / this.cacheSize);
   for (var i = 0; i < numCopies; ++i) {
     var copySize = Math.min(
@@ -818,7 +726,7 @@ LRUCache.prototype.reset = async function () {
       this.cacheSize
     );
     commandEncoder.copyBufferToBuffer(
-      this.slotItemIDs,
+      negativeBuffer,
       0,
       this.cachedItemSlots,
       i * this.cacheSize * 4,

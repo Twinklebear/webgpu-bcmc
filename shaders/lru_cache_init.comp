@@ -12,8 +12,8 @@ layout(set = 1, binding = 0, std140) uniform OldSize
 void main(void)
 {
     // Initialize each new empty slot
-    slot_age[old_size + gl_GlobalInvocationID.x] = 100000;
-    slot_available[old_size + gl_GlobalInvocationID.x] = 1;
-    slot_item_id[old_size + gl_GlobalInvocationID.x] = -1;
+    slot_data[old_size + gl_GlobalInvocationID.x].age = 100000;
+    slot_data[old_size + gl_GlobalInvocationID.x].available = 1;
+    slot_data[old_size + gl_GlobalInvocationID.x].item_id = -1;
 }
 

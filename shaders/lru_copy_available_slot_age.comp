@@ -11,6 +11,6 @@ layout(set = 1, binding = 0, std430) buffer AvailableSlotAges
 
 void main(void)
 {
-    available_slot_ages[gl_GlobalInvocationID.x] = slot_age[slot_available_id[gl_GlobalInvocationID.x]];
+    available_slot_ages[gl_GlobalInvocationID.x] = slot_data[slot_available_id[gl_GlobalInvocationID.x]].age;
 }
 
