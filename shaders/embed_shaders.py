@@ -16,6 +16,7 @@ shaders = ["prefix_sum.comp", "block_prefix_sum.comp", "add_block_sums.comp",
         "compute_block_voxel_num_verts.comp", "compute_block_vertices.comp",
         "lru_cache_init.comp", "lru_cache_mark_new_items.comp", "lru_cache_update.comp",
         "lru_copy_available_slot_age.comp", "lru_cache_age_slots.comp",
+        "lru_cache_extract_slot_available.comp",
         "radix_sort_chunk.comp", "merge_sorted_chunks.comp", "reverse_buffer.comp"]
 
 try:

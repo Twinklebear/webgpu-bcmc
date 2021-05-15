@@ -46,7 +46,6 @@ var LRUCache = function(
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
         mappedAtCreation: true,
     });
-    // TODO: Just fill with a high value??
     var m = new Int32Array(buf.getMappedRange());
     for (var i = 0; i < initialSize; ++i) {
         m[i * 3] = 2 + i;   // For slot age
@@ -58,6 +57,12 @@ var LRUCache = function(
 
     this.slotAvailableOffsets = this.device.createBuffer({
         size: this.scanPipeline.getAlignedSize(initialSize) * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+
+    // A temp buffer to hold the available slot IDs for compaction
+    this.slotAvailableForCompact = this.device.createBuffer({
+        size: initialSize * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
 
@@ -184,8 +189,6 @@ var LRUCache = function(
         },
     });
 
-    // TODO: Exceeds limit of 6 storage buffers, and chrome hasn't implemented
-    // GPU limits queries yet
     this.markNewItemsPipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
             bindGroupLayouts: [this.lruCacheBGLayout, this.markNewItemsBGLayout],
@@ -225,6 +228,38 @@ var LRUCache = function(
         compute: {
             module: device.createShaderModule({
                 code: lru_copy_available_slot_age_comp_spv,
+            }),
+            entryPoint: "main",
+        },
+    });
+
+    this.outputSlotAvailableBG = this.device.createBindGroup({
+        layout: this.cacheUpdateBGLayout,
+        entries: [{
+            binding: 0,
+            resource: {
+                buffer: this.slotAvailableOffsets,
+            }
+        }]
+    });
+
+    this.outputSlotAvailableForCompact = this.device.createBindGroup({
+        layout: this.cacheUpdateBGLayout,
+        entries: [{
+            binding: 0,
+            resource: {
+                buffer: this.slotAvailableForCompact,
+            }
+        }]
+    });
+
+    this.extractSlotAvailablePipeline = this.device.createComputePipeline({
+        layout: this.device.createPipelineLayout({
+            bindGroupLayouts: [this.lruCacheBGLayout, this.cacheUpdateBGLayout],
+        }),
+        compute: {
+            module: device.createShaderModule({
+                code: lru_cache_extract_slot_available_comp_spv,
             }),
             entryPoint: "main",
         },
@@ -304,13 +339,17 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     pass.setBindGroup(0, this.lruCacheBG);
     pass.setBindGroup(1, markNewItemsBG);
     pass.dispatch(this.totalElements, 1, 1);
+
+    // We need a kernel to copy the slotAvailable member out of the structs instead of using
+    // copyBufferToBuffer, since it's stored AoS to reduce our buffer use
+    pass.setPipeline(this.extractSlotAvailablePipeline);
+    pass.setBindGroup(1, this.outputSlotAvailableBG);
+    pass.dispatch(this.cacheSize, 1, 1);
+
     pass.endPass();
     commandEncoder.copyBufferToBuffer(
         this.needsCaching, 0, this.needsCachingOffsets, 0, this.totalElements * 4);
-    // TODO: Needs kernel to copy the slotAvailable member out of the structs instead of using
-    // copyBufferToBuffer
-    commandEncoder.copyBufferToBuffer(
-        this.slotAvailable, 0, this.slotAvailableOffsets, 0, this.cacheSize * 4);
+
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
     var end = performance.now();
@@ -385,6 +424,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         // space
         this.slotAvailableIDs.destroy();
         this.slotAvailableOffsets.destroy();
+        this.slotAvailableForCompact.destroy();
 
         var newSize =
             Math.min(this.cacheSize + Math.ceil((numNewItems - numSlotsAvailable) * 1.5),
@@ -399,12 +439,17 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
         });
 
+        this.slotAvailableForCompact = this.device.createBuffer({
+            size: newSize * 4,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+        });
+
         this.slotAvailableIDs = this.device.createBuffer({
             size: newSize * 4,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
         });
 
-        // Update the bindgroup
+        // Update the bindgroups
         this.lruCacheBG = this.device.createBindGroup({
             layout: this.lruCacheBGLayout,
             entries: [
@@ -427,6 +472,16 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
                     },
                 },
             ],
+        });
+
+        this.outputSlotAvailableForCompact = this.device.createBindGroup({
+            layout: this.cacheUpdateBGLayout,
+            entries: [{
+                binding: 0,
+                resource: {
+                    buffer: this.slotAvailableForCompact,
+                }
+            }]
         });
 
         var commandEncoder = this.device.createCommandEncoder();
@@ -461,11 +516,27 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
         });
 
+        this.outputSlotAvailableBG = this.device.createBindGroup({
+            layout: this.cacheUpdateBGLayout,
+            entries: [{
+                binding: 0,
+                resource: {
+                    buffer: this.slotAvailableOffsets,
+                }
+            }]
+        });
+
         var commandEncoder = this.device.createCommandEncoder();
-        // TODO: Needs kernel to copy the slotAvailable member out of the structs instead of
-        // using copyBufferToBuffer
-        commandEncoder.copyBufferToBuffer(
-            slotAvailable, 0, this.slotAvailableOffsets, 0, newSize * 4);
+
+        var pass = commandEncoder.beginComputePass()
+        // We need a kernel to copy the slotAvailable member out of the structs instead of
+        // using copyBufferToBuffer, since it's stored AoS to reduce our buffer use
+        pass.setPipeline(this.extractSlotAvailablePipeline);
+        pass.setBindGroup(0, this.lruCacheBG);
+        pass.setBindGroup(1, this.outputSlotAvailableBG);
+        pass.dispatch(newSize, 1, 1);
+        pass.endPass();
+
         this.device.queue.submit([commandEncoder.finish()]);
 
         // Update available slot IDs w/ a new scan result
@@ -493,14 +564,25 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     // For the items which are evicted from the cache by assigning their slot
     // to another item, we have to mark that they're no longer cached
     var start = performance.now();
-    await this.streamCompact.compactActiveIDs(
-        this.cacheSize,
-        // TODO: Same thing about slotAvailable, easiest is to extract it to a temp buffer we
-        // use with the same kernel we'd add for copying to the slotAvailableOffsets buffer
-        // before running the scan
-        this.slotAvailable,
-        this.slotAvailableOffsets,
-        this.slotAvailableIDs);
+
+    // We need a kernel to copy the slotAvailable member out of the structs into a temp array
+    // for use by stream compact. Not as great for perf, but a bit lazy here ideally we can
+    // undo this buffer use reduction once the limits API is added.
+    var commandEncoder = this.device.createCommandEncoder();
+    var pass = commandEncoder.beginComputePass()
+    pass.setPipeline(this.extractSlotAvailablePipeline);
+    pass.setBindGroup(0, this.lruCacheBG);
+    pass.setBindGroup(1, this.outputSlotAvailableForCompact);
+    pass.dispatch(this.cacheSize, 1, 1);
+    pass.endPass();
+    this.device.queue.submit([commandEncoder.finish()]);
+    // I don't think we need an await here since it's all on the same queue
+    // await this.device.queue.onSubmittedWorkDone();
+
+    await this.streamCompact.compactActiveIDs(this.cacheSize,
+                                              this.slotAvailableForCompact,
+                                              this.slotAvailableOffsets,
+                                              this.slotAvailableIDs);
     var end = performance.now();
     console.log(`num Available ${numSlotsAvailable}`);
     console.log(`cache size ${this.cacheSize}`);
