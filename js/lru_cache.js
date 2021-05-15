@@ -337,6 +337,7 @@ LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
     0,
     this.totalElements * 4
   );
+  // TODO: Needs kernel to copy the slotAvailable member out of the structs instead of using copyBufferToBuffer
   commandEncoder.copyBufferToBuffer(
     this.slotAvailable,
     0,
@@ -520,6 +521,7 @@ LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
     });
 
     var commandEncoder = this.device.createCommandEncoder();
+    // TODO: Needs kernel to copy the slotAvailable member out of the structs instead of using copyBufferToBuffer
     commandEncoder.copyBufferToBuffer(
       slotAvailable,
       0,
@@ -558,6 +560,8 @@ LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
   var start = performance.now();
   await this.streamCompact.compactActiveIDs(
     this.cacheSize,
+    // TODO: Same thing about slotAvailable, easiest is to extract it to a temp buffer we use
+    // with the same kernel we'd add for copying to the slotAvailableOffsets buffer before running the scan
     this.slotAvailable,
     this.slotAvailableOffsets,
     this.slotAvailableIDs
