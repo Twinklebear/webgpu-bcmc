@@ -16,28 +16,31 @@ var volumes = {
 
 var fileRegex = /.*\/(\w+)_(\d+)x(\d+)x(\d+)_(\w+)\.*/;
 
-var makeVolumeURL = function(name) {
+var makeVolumeURL =
+    function(name) {
     if (name.startsWith("local")) {
         return volumes[name];
     }
-	return "https://www.dl.dropboxusercontent.com/s/" + volumes[name] + "?dl=1";
+    return "https://www.dl.dropboxusercontent.com/s/" + volumes[name] + "?dl=1";
 }
 
-var getVolumeDimensions = function(name) {
-	var m = volumes[name].match(fileRegex);
-	return [parseInt(m[2]), parseInt(m[3]), parseInt(m[4])];
+var getVolumeDimensions =
+    function(name) {
+    var m = volumes[name].match(fileRegex);
+    return [parseInt(m[2]), parseInt(m[3]), parseInt(m[4])];
 }
 
-var getVolumeType = function(name) {
-	var m = volumes[name].match(fileRegex);
-	return m[5];
+var getVolumeType =
+    function(name) {
+    var m = volumes[name].match(fileRegex);
+    return m[5];
 }
 
-function recomputeSurface() {
+function
+recomputeSurface() {
     requestRecompute = true;
 }
 
 function runBenchmark(benchmark) {
     requestBenchmark = benchmark;
 }
-

@@ -1,16 +1,21 @@
-var RandomIsovalueBenchmark = function(isovalueSlider, perfResults, range) {
+var RandomIsovalueBenchmark =
+    function(isovalueSlider, perfResults, range) {
     this.iteration = 0;
     this.isovalueSlider = isovalueSlider;
     this.perfResults = perfResults;
     this.range = range;
 }
 
-RandomIsovalueBenchmark.prototype.run = function() {
+    RandomIsovalueBenchmark.prototype.run =
+        function() {
     if (this.iteration == 100) {
         console.log(JSON.stringify(this.perfResults));
         for (const prop in this.perfResults) {
-            var sum = this.perfResults[prop].reduce(function(acc, x) { return acc + x; });
-            console.log(`${prop} average = ${(sum / this.perfResults[prop].length).toFixed(3)}`);
+            var sum = this.perfResults[prop].reduce(function(acc, x) {
+                return acc + x;
+            });
+            console.log(
+                `${prop} average = ${(sum / this.perfResults[prop].length).toFixed(3)}`);
         }
         return false;
     }
@@ -20,7 +25,8 @@ RandomIsovalueBenchmark.prototype.run = function() {
     return true;
 }
 
-var SweepIsovalueBenchark = function(isovalueSlider, perfResults, range, sweepUp) {
+var SweepIsovalueBenchark =
+    function(isovalueSlider, perfResults, range, sweepUp) {
     this.iteration = 0;
     this.isovalueSlider = isovalueSlider;
     this.perfResults = perfResults;
@@ -33,12 +39,15 @@ var SweepIsovalueBenchark = function(isovalueSlider, perfResults, range, sweepUp
     }
 }
 
-SweepIsovalueBenchark.prototype.run = function() {
+    SweepIsovalueBenchark.prototype.run = function() {
     if (this.iteration == 100) {
         console.log(JSON.stringify(this.perfResults));
         for (const prop in this.perfResults) {
-            var sum = this.perfResults[prop].reduce(function(acc, x) { return acc + x; });
-            console.log(`${prop} average = ${(sum / this.perfResults[prop].length).toFixed(3)}`);
+            var sum = this.perfResults[prop].reduce(function(acc, x) {
+                return acc + x;
+            });
+            console.log(
+                `${prop} average = ${(sum / this.perfResults[prop].length).toFixed(3)}`);
         }
         return false;
     }
@@ -52,4 +61,3 @@ SweepIsovalueBenchark.prototype.run = function() {
     this.iteration += 1;
     return true;
 }
-
