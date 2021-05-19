@@ -22,6 +22,18 @@ const int[12][2] edge_vertices = {
     {3, 7},
 };
 
+struct BlockInfo {
+    uint index;
+    uint offset;
+};
+
+layout(set = 1, binding = 0, std430) buffer BlockInformation {
+    BlockInfo blocks_with_verts[];
+};
+
+// BlockInformation merges the below buffers so we don't exceed max
+// storage buffer count in Dawn (6)
+/*
 layout(set = 1, binding = 0, std430) buffer BlockOffsets
 {
     uint block_offsets[];
@@ -31,13 +43,18 @@ layout(set = 1, binding = 1, std430) buffer BlockWithVertsIndices
 {
     uint block_with_verts_indices[];
 };
+*/
 
+// This offsetting is now handled by how we build the BlockInfo struct
+// prior to each dispatch here for the chunking.
+/*
 layout(set = 2, binding = 0) uniform DecompressBlockOffset
 {
     uint start_block_offset;
 };
+*/
 
-layout(set = 2, binding = 1, std430) buffer Vertices
+layout(set = 2, binding = 0, std430) buffer Vertices
 {
     uvec2 verts[];
 };
@@ -58,7 +75,8 @@ vec3 lerp_verts(const ivec3 va, const ivec3 vb, const float fa, const float fb)
 
 void main(void)
 {
-    const uint block_id = block_ids[block_with_verts_indices[start_block_offset + gl_WorkGroupID.x]];
+    const BlockInfo block_info = blocks_with_verts[gl_WorkGroupID.x];
+    const uint block_id = block_ids[block_info.index];
     const uvec3 block_dims = load_block(block_id);
     const uvec3 voxel_pos = voxel_id_to_voxel(gl_LocalInvocationID.x);
 
@@ -120,8 +138,7 @@ void main(void)
     }
     barrier();
 
-    const uint vertex_offset = block_offsets[start_block_offset + gl_WorkGroupID.x]
-        + voxel_vertices[gl_LocalInvocationID.x];
+    const uint vertex_offset = block_info.offset + voxel_vertices[gl_LocalInvocationID.x];
     // Compute and output the vertices
     if (all(lessThan(voxel_pos + uvec3(1), block_dims))) {
         const float values[8] = compute_vertex_values(voxel_pos, block_dims);

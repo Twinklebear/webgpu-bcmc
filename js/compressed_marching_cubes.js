@@ -23,22 +23,35 @@ var CompressedMarchingCubes = function(device) {
     triTableBuf.unmap();
     this.triTable = triTableBuf;
 
+    // We'll need a max of maxDispatchSize BlockInfo structs in the buffer,
+    // so just allocate it once up front
+    this.blockInformationBuffer = device.createBuffer({
+        size: this.maxDispatchSize * 8,
+        usage: GPUBufferUsage.STORAGE,
+    });
+
     this.computeBlockRangeBGLayout = device.createBindGroupLayout({
         entries: [
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
             {
                 binding: 2,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
@@ -59,17 +72,23 @@ var CompressedMarchingCubes = function(device) {
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 2,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
@@ -90,36 +109,48 @@ var CompressedMarchingCubes = function(device) {
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
             {
                 binding: 2,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 3,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 4,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
-    this.decompressBlocksStartOffsetBGLayout = device.createBindGroupLayout({
+    this.ub1binding0BGLayout = device.createBindGroupLayout({
         entries: [
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
         ],
     });
@@ -128,7 +159,7 @@ var CompressedMarchingCubes = function(device) {
         layout: device.createPipelineLayout({
             bindGroupLayouts: [
                 this.decompressBlocksBGLayout,
-                this.decompressBlocksStartOffsetBGLayout,
+                this.ub1binding0BGLayout,
             ],
         }),
         compute: {
@@ -144,55 +175,73 @@ var CompressedMarchingCubes = function(device) {
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
             {
                 binding: 2,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 3,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 4,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 5,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
-    this.computeBlockHasVerticesBGLayout = device.createBindGroupLayout({
+    this.sb1Binding0BGLayout = device.createBindGroupLayout({
         entries: [
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
-    this.computeBlockVerticesBGLayout = device.createBindGroupLayout({
+    this.sb2Binding01BGLayout = device.createBindGroupLayout({
         entries: [
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
@@ -201,12 +250,16 @@ var CompressedMarchingCubes = function(device) {
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
@@ -215,7 +268,7 @@ var CompressedMarchingCubes = function(device) {
         layout: device.createPipelineLayout({
             bindGroupLayouts: [
                 this.computeBlockVertsInfoBGLayout,
-                this.computeBlockHasVerticesBGLayout,
+                this.sb1Binding0BGLayout,
             ],
         }),
         compute: {
@@ -229,7 +282,7 @@ var CompressedMarchingCubes = function(device) {
         layout: device.createPipelineLayout({
             bindGroupLayouts: [
                 this.computeBlockVertsInfoBGLayout,
-                this.computeBlockVerticesBGLayout,
+                this.sb2Binding01BGLayout,
             ],
         }),
         compute: {
@@ -240,14 +293,31 @@ var CompressedMarchingCubes = function(device) {
         },
     });
 
-    // TODO: Exceeds limit of 6 storage buffers, and chrome hasn't implemented GPU limits
-    // queries yet
+    this.buildBlockInfoPipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout({
+            bindGroupLayouts: [
+                // One storage buffer
+                this.sb1Binding0BGLayout,
+                // Two storage buffers
+                this.sb2Binding01BGLayout,
+                // One uniform buffer
+                this.ub1binding0BGLayout,
+            ],
+        }),
+        compute: {
+            module: device.createShaderModule({
+                code: build_block_info_comp_spv,
+            }),
+            entryPoint: "main",
+        },
+    });
+
     this.computeBlockVerticesPipeline = device.createComputePipeline({
         layout: device.createPipelineLayout({
             bindGroupLayouts: [
                 this.computeBlockVertsInfoBGLayout,
-                this.computeBlockVerticesBGLayout,
-                this.computeBlockVerticesOutputBGLayout,
+                this.sb1Binding0BGLayout,
+                this.sb1Binding0BGLayout,
             ],
         }),
         compute: {
@@ -288,6 +358,7 @@ CompressedMarchingCubes.prototype.reportMemoryUse = function() {
             blocksWithVertices: this.numBlocksWithVerticesStorage * 4,
             blockVertexOffsets:
                 this.scanPipeline.getAlignedSize(this.numBlocksWithVerticesStorage),
+            blockInformationBufferTmp: this.maxDispatchSize * 8,
             triTable: triTable.byteLength,
             volumeInfo: 16 * 4,
         },
@@ -778,7 +849,7 @@ CompressedMarchingCubes.prototype.decompressBlocks =
         pass.setBindGroup(0, decompressBlocksBG);
         // Have to create bind group here because dynamic offsets are not allowed
         var decompressBlocksStartOffsetBG = this.device.createBindGroup({
-            layout: this.decompressBlocksStartOffsetBGLayout,
+            layout: this.ub1binding0BGLayout,
             entries: [
                 {
                     binding: 0,
@@ -842,7 +913,7 @@ CompressedMarchingCubes.prototype.computeBlockHasVertices = async function() {
         ],
     });
     var blockHasVerticesBG = this.device.createBindGroup({
-        layout: this.computeBlockHasVerticesBGLayout,
+        layout: this.sb1Binding0BGLayout,
         entries: [
             {
                 binding: 0,
@@ -867,7 +938,7 @@ CompressedMarchingCubes.prototype.computeBlockHasVertices = async function() {
 
 CompressedMarchingCubes.prototype.computeBlockVertexCounts = async function() {
     this.blockVertexOffsetsBG = this.device.createBindGroup({
-        layout: this.computeBlockVerticesBGLayout,
+        layout: this.sb2Binding01BGLayout,
         entries: [
             {
                 binding: 0,
@@ -899,6 +970,10 @@ CompressedMarchingCubes.prototype.computeBlockVertexCounts = async function() {
 
 CompressedMarchingCubes.prototype.computeVertices = async function() {
     var numChunks = Math.ceil(this.numBlocksWithVertices / this.maxDispatchSize);
+
+    // TODO: This is aligned to 256b b/c of limitations with dynamic offsets,
+    // but since we're not using dynamic offsets b/c they're disabled for security
+    // the offset likely no longer needs such a big alignment
     var dispatchChunkOffsetsBuf = this.device.createBuffer({
         size: numChunks * 256,
         usage: GPUBufferUsage.UNIFORM,
@@ -910,17 +985,23 @@ CompressedMarchingCubes.prototype.computeVertices = async function() {
     }
     dispatchChunkOffsetsBuf.unmap();
 
+    var vertexBufferBG = this.device.createBindGroup({
+        layout: this.sb1Binding0BGLayout,
+        entries: [{binding: 0, resource: {buffer: this.vertexBuffer}}]
+    });
+
+    var blockInformationBG = this.device.createBindGroup({
+        layout: this.sb1Binding0BGLayout,
+        entries: [{binding: 0, resource: {buffer: this.blockInformationBuffer}}]
+    });
+
     // Chunk up dispatch to avoid hitting TDR
     for (var i = 0; i < numChunks; ++i) {
         var numWorkGroups = Math.min(this.numBlocksWithVertices - i * this.maxDispatchSize,
                                      this.maxDispatchSize);
-        var commandEncoder = this.device.createCommandEncoder();
-        var pass = commandEncoder.beginComputePass();
-        pass.setPipeline(this.computeBlockVerticesPipeline);
-        pass.setBindGroup(0, this.computeBlockVertexInfoBG);
-        pass.setBindGroup(1, this.blockVertexOffsetsBG);
-        var bindGroup = this.device.createBindGroup({
-            layout: this.computeBlockVerticesOutputBGLayout,
+
+        var offsetBG = this.device.createBindGroup({
+            layout: this.ub1binding0BGLayout,
             entries: [
                 {
                     binding: 0,
@@ -930,16 +1011,29 @@ CompressedMarchingCubes.prototype.computeVertices = async function() {
                         offset: i * 256,
                     },
                 },
-                {
-                    binding: 1,
-                    resource: {
-                        buffer: this.vertexBuffer,
-                    },
-                },
-            ],
+            ]
         });
-        pass.setBindGroup(2, bindGroup);
+
+        var commandEncoder = this.device.createCommandEncoder();
+        var pass = commandEncoder.beginComputePass();
+
+        // Build the merged block info structs for the vertex computation first.
+        // NOTE: The struct is needed so that we stay under the max storage buffers
+        // per pipeline limit of Dawn (6), since Chrome hasn't implemented the higher
+        // limits request API.
+        pass.setPipeline(this.buildBlockInfoPipeline);
+        pass.setBindGroup(0, blockInformationBG);
+        pass.setBindGroup(1, this.blockVertexOffsetsBG);
+        pass.setBindGroup(2, offsetBG);
         pass.dispatch(numWorkGroups, 1, 1);
+
+        // Now extract the vertices for the blocks
+        pass.setPipeline(this.computeBlockVerticesPipeline);
+        pass.setBindGroup(0, this.computeBlockVertexInfoBG);
+        pass.setBindGroup(1, blockInformationBG);
+        pass.setBindGroup(2, vertexBufferBG);
+        pass.dispatch(numWorkGroups, 1, 1);
+
         pass.endPass();
         this.device.queue.submit([commandEncoder.finish()]);
     }
