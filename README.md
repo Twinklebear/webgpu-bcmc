@@ -8,17 +8,15 @@ and [the supplemental video](https://youtu.be/O7Tboj2dDVA) for more details.
 
 ## Usage
 
-This code got blocked by the missing `GPULimits` API for WebGPU, Chrome Canary recently started
-enforcing the minimum spec limits on storage buffers that this code exceeds, but didn't add
-the API to request higher limits (which are available on desktop and laptop hardware).
-Please see https://bugs.chromium.org/p/dawn/issues/detail?id=519 for some additional
-information.
+This is now running to workarounds and updates implemented to get around temporary
+missing APIs and disabled features or limitations. The application runs in
+Chrome Canary 92.0.4512.0 (and later versions as long as the WebGPU API is not changed),
+though some data decompression corruption has been seen on macOS for some data sets. On Windows it runs
+well, so try it out online!
 
-Note: I think this is now resolved, however the application also makes use of dynamic
-storage buffers which are also now temporarily disabled in Chrome. See [issue 429](https://bugs.chromium.org/p/dawn/issues/detail?id=429)
-
-A live demo will be put online along with final code polish and updates done once this
-issue is resolved.
+- [Skull](https://www.willusher.io/webgpu-bcmc/webgpu_bcmc.html) (256^3, issues on macOS)
+- [Magnetic Reconnection](https://www.willusher.io/webgpu-bcmc/webgpu_bcmc.html#magnetic) (512^3, ok on macOS)
+- [Chameleon](https://www.willusher.io/webgpu-bcmc/webgpu_bcmc.html#chameleon) (1024x1024x1080, issues on macOS)
 
 ## Images
 
