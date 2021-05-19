@@ -80,45 +80,45 @@ StreamCompact.prototype.compactActiveIDs =
             Math.min(numElements - i * this.maxDispatchSize, this.maxDispatchSize);
         var offset = i * this.maxDispatchSize * 4;
         // Have to create bind groups here because dynamic offsets are not allowed
-        var streamCompactBG = this.device.createBindGroup({
-            layout: this.streamCompactBGLayout,
-            entries: [
-                {
-                    binding: 0,
-                    resource: {
-                        buffer: isActiveBuffer,
-                        size: 4 * Math.min(numElements, this.maxDispatchSize),
-                        offset: offset,
+        var streamCompactBG = null;
+        if (numWorkGroups === this.maxDispatchSize) {
+            streamCompactBG = this.device.createBindGroup({
+                layout: this.streamCompactBGLayout,
+                entries: [
+                    {
+                        binding: 0,
+                        resource: {
+                            buffer: isActiveBuffer,
+                            size: 4 * Math.min(numElements, this.maxDispatchSize),
+                            offset: offset,
+                        },
                     },
-                },
-                {
-                    binding: 1,
-                    resource: {
-                        buffer: offsetsBuffer,
-                        size: 4 * Math.min(numElements, this.maxDispatchSize),
-                        offset: offset,
+                    {
+                        binding: 1,
+                        resource: {
+                            buffer: offsetsBuffer,
+                            size: 4 * Math.min(numElements, this.maxDispatchSize),
+                            offset: offset,
+                        },
                     },
-                },
-                {
-                    binding: 2,
-                    resource: {
-                        buffer: compactPassOffset,
-                        size: 4,
-                        offset: i * 256,
+                    {
+                        binding: 2,
+                        resource: {
+                            buffer: compactPassOffset,
+                            size: 4,
+                            offset: i * 256,
+                        },
                     },
-                },
-                {
-                    binding: 3,
-                    resource: {
-                        buffer: outputBuffer,
+                    {
+                        binding: 3,
+                        resource: {
+                            buffer: outputBuffer,
+                        },
                     },
-                },
-            ],
-        });
-
-        var streamCompactRemainderBG = null;
-        if (numElements % this.maxDispatchSize) {
-            streamCompactRemainderBG = this.device.createBindGroup({
+                ],
+            });
+        } else {
+            streamCompactBG = this.device.createBindGroup({
                 layout: this.streamCompactBGLayout,
                 entries: [
                     {
@@ -154,11 +154,7 @@ StreamCompact.prototype.compactActiveIDs =
                 ],
             });
         }
-        if (numWorkGroups == this.maxDispatchSize) {
-            pass.setBindGroup(0, streamCompactBG);
-        } else {
-            pass.setBindGroup(0, streamCompactRemainderBG);
-        }
+        pass.setBindGroup(0, streamCompactBG);
         pass.dispatch(numWorkGroups, 1, 1);
     }
     pass.endPass();

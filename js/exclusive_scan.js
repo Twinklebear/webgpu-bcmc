@@ -194,51 +194,50 @@ ExclusiveScanner.prototype.scan = async function(dataSize) {
         var nWorkGroups =
             Math.min((this.inputSize - i * this.scanPipeline.maxScanSize) / ScanBlockSize,
                      ScanBlockSize);
-        var scanBlockBG = this.scanPipeline.device.createBindGroup({
-            layout: this.scanPipeline.scanBlocksLayout,
-            entries: [
-                {
-                    binding: 0,
-                    resource: {
-                        buffer: this.inputBuf,
-                        size: Math.min(this.scanPipeline.maxScanSize, this.inputSize) * 4,
-                        offset: this.offsets[i],
+
+        var scanBlockBG = null;
+        if (nWorkGroups === ScanBlockSize) {
+            scanBlockBG = this.scanPipeline.device.createBindGroup({
+                layout: this.scanPipeline.scanBlocksLayout,
+                entries: [
+                    {
+                        binding: 0,
+                        resource: {
+                            buffer: this.inputBuf,
+                            size: Math.min(this.scanPipeline.maxScanSize, this.inputSize) * 4,
+                            offset: this.offsets[i],
+                        },
                     },
-                },
-                {
-                    binding: 1,
-                    resource: {
-                        buffer: this.blockSumBuf,
+                    {
+                        binding: 1,
+                        resource: {
+                            buffer: this.blockSumBuf,
+                        },
                     },
-                },
-            ],
-        });
-        if (nWorkGroups < ScanBlockSize) {
+                ],
+            });
+        } else {
             // Bind groups for processing the remainder if the aligned size isn't
             // an even multiple of the max scan size
-            this.remainderScanBlocksBindGroup = null;
-            if (this.inputSize % this.scanPipeline.maxScanSize) {
-                this.remainderScanBlocksBindGroup = this.scanPipeline.device.createBindGroup({
-                    layout: this.scanPipeline.scanBlocksLayout,
-                    entries: [
-                        {
-                            binding: 0,
-                            resource: {
-                                buffer: this.inputBuf,
-                                size: (this.inputSize % this.scanPipeline.maxScanSize) * 4,
-                                offset: this.offsets[i],
-                            },
+            scanBlockBG = this.scanPipeline.device.createBindGroup({
+                layout: this.scanPipeline.scanBlocksLayout,
+                entries: [
+                    {
+                        binding: 0,
+                        resource: {
+                            buffer: this.inputBuf,
+                            size: (this.inputSize % this.scanPipeline.maxScanSize) * 4,
+                            offset: this.offsets[i],
                         },
-                        {
-                            binding: 1,
-                            resource: {
-                                buffer: this.blockSumBuf,
-                            },
+                    },
+                    {
+                        binding: 1,
+                        resource: {
+                            buffer: this.blockSumBuf,
                         },
-                    ],
-                });
-            }
-            scanBlockBG = this.remainderScanBlocksBindGroup;
+                    },
+                ],
+            });
         }
 
         // Clear the previous block sums
