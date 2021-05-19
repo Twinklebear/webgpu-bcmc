@@ -22,10 +22,16 @@
 
     var volumeDims = getVolumeDimensions(dataset.name);
     var zfpDataName = dataset.name + ".zfp";
-    var compressedData = await fetch("/models/" + zfpDataName)
-                             .then((res) => res.arrayBuffer().then(function(arr) {
-                                 return new Uint8Array(arr);
-                             }));
+    var volumeURL = null;
+    if (window.location.hostname == "willusher.io") {
+        volumeURL = "https://lab.wushernet.com/data/bcmc/" + zfpDataName;
+    } else {
+        volumeURL = "/models/" + zfpDataName;
+    }
+    var compressedData =
+        await fetch(volumeURL).then((res) => res.arrayBuffer().then(function(arr) {
+            return new Uint8Array(arr);
+        }));
 
     if (compressedData == null) {
         alert(`Failed to load compressed data`);
