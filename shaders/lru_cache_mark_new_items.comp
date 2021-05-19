@@ -24,10 +24,10 @@ void main(void)
         item_needs_caching[gl_GlobalInvocationID.x] = 0;
         if (item_needed[gl_GlobalInvocationID.x] == 1) {
             // Item is already cached, reset age and unset slot availability
-            slot_age[slot] = 0;
-            slot_available[slot] = 0;
+            slot_data[slot].age = 0;
+            slot_data[slot].available = 0;
         } else {
-            slot_available[slot] = 1;
+            slot_data[slot].available = 1;
         }
     } else {
         // Item is not cached, just pass through whether we need the item or not
