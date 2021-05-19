@@ -31,11 +31,13 @@ var ExclusiveScanPipeline = function(device) {
 
     this.scanBlocksLayout = device.createBindGroupLayout({
         entries: [
-            {binding: 0, visibility: GPUShaderStage.COMPUTE, type: "storage-buffer"},
+            {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
@@ -45,12 +47,16 @@ var ExclusiveScanPipeline = function(device) {
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });

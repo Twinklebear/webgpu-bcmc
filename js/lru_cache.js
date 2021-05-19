@@ -94,17 +94,23 @@ var LRUCache = function(
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 2,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
@@ -138,12 +144,16 @@ var LRUCache = function(
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "readonly-storage-buffer",
+                buffer: {
+                    type: "read-only-storage",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
@@ -153,7 +163,9 @@ var LRUCache = function(
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
@@ -163,7 +175,9 @@ var LRUCache = function(
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
         ],
     });

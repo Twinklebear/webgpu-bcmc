@@ -15,22 +15,30 @@ var StreamCompact = function(device) {
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 2,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
             {
                 binding: 3,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });

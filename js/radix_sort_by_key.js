@@ -6,7 +6,9 @@ var RadixSorter = function(device) {
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
         ],
     });
@@ -16,12 +18,16 @@ var RadixSorter = function(device) {
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
@@ -31,22 +37,30 @@ var RadixSorter = function(device) {
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 2,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
             {
                 binding: 3,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });
@@ -56,7 +70,9 @@ var RadixSorter = function(device) {
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
         ],
     });
@@ -66,7 +82,9 @@ var RadixSorter = function(device) {
             {
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
-                type: "storage-buffer",
+                buffer: {
+                    type: "storage",
+                }
             },
         ],
     });

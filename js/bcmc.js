@@ -11,7 +11,6 @@
 
     var canvas = document.getElementById("webgpu-canvas");
     var context = canvas.getContext("gpupresent");
-    var original = [];
 
     var fileRegex = /(\w+)_(\d+)x(\d+)x(\d+)_(\w+)\.*/;
 
@@ -275,12 +274,16 @@
             {
                 binding: 0,
                 visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
             {
                 binding: 1,
                 visibility: GPUShaderStage.VERTEX,
-                type: "uniform-buffer",
+                buffer: {
+                    type: "uniform",
+                }
             },
         ],
     });
@@ -313,35 +316,26 @@
         layout: device.createPipelineLayout({
             bindGroupLayouts: [viewParamsLayout],
         }),
-        vertexStage: {
+        vertex: {
             module: device.createShaderModule({code: mc_isosurface_vert_spv}),
             entryPoint: "main",
+            buffers: [{
+                arrayStride: 2 * 4,
+                attributes: [
+                    {
+                        format: "uint32x2",
+                        offset: 0,
+                        shaderLocation: 0,
+                    },
+                ]
+            }]
         },
-        fragmentStage: {
+        fragment: {
             module: device.createShaderModule({code: mc_isosurface_frag_spv}),
             entryPoint: "main",
+            targets: [{format: swapChainFormat}]
         },
-        primitiveTopology: "triangle-list",
-        vertexState: {
-            vertexBuffers: [
-                {
-                    arrayStride: 2 * 4,
-                    attributes: [
-                        {
-                            format: "uint32x2",
-                            offset: 0,
-                            shaderLocation: 0,
-                        },
-                    ],
-                },
-            ],
-        },
-        colorStates: [
-            {
-                format: swapChainFormat,
-            },
-        ],
-        depthStencilState: {
+        depthStencil: {
             format: "depth24plus-stencil8",
             depthWriteEnabled: true,
             depthCompare: "less",
