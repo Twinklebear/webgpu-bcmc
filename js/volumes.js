@@ -1,46 +1,95 @@
 var requestRecompute = false;
 var requestBenchmark = null;
 
-var volumes = {
-    // TODO: replace with compressed versions
-    "Fuel": "7d87jcsh0qodk78/fuel_64x64x64_uint8.raw",
-    "Neghip": "zgocya7h33nltu9/neghip_64x64x64_uint8.raw",
-    "HydrogenAtom": "jwbav8s3wmmxd5x/hydrogen_atom_128x128x128_uint8.raw",
-    "BostonTeapot": "w4y88hlf2nbduiv/boston_teapot_256x256x178_uint8.raw",
-    "Engine": "ld2sqwwd3vaq4zf/engine_256x256x128_uint8.raw",
-    "Bonsai": "rdnhdxmxtfxe0sa/bonsai_256x256x256_uint8.raw",
-    "Foot": "ic0mik3qv4vqacm/foot_256x256x256_uint8.raw",
-    "Skull": "5rfjobn0lvb7tmo/skull_256x256x256_uint8.raw",
-    "Aneurysm": "3ykigaiym8uiwbp/aneurism_256x256x256_uint8.raw",
+var datasets = {
+    fuel: {
+        compressionRate: 4,
+        name: "fuel_64x64x64_uint8.raw",
+        range: [10, 255],
+        scale: [1, 1, 1],
+    },
+    aneurism: {
+        compressionRate: 4,
+        name: "vertebra_512x512x512_uint16.raw",
+        range: [550, 2100],
+        scale: [1, 1, 1],
+    },
+    // For benchmarks:
+    skull: {
+        compressionRate: 2,
+        name: "skull_256x256x256_uint8.raw.crate2",
+        range: [10, 255],
+        scale: [1, 1, 1],
+    },
+    foot: {
+        compressionRate: 2,
+        name: "foot_256x256x256_uint8.raw",
+        range: [10, 255],
+        scale: [1, 1, 1],
+    },
+    backpack: {
+        compressionRate: 4,
+        name: "backpack_512x512x373_uint16.raw",
+        range: [200, 4000],
+        scale: [1, 1, 1],
+        step: 1.0 / 3800.0,
+    },
+    magnetic: {
+        compressionRate: 4,
+        name: "magnetic_reconnection_crate4_512x512x512_float32.raw",
+        range: [0.1, 3.5],
+        scale: [1, 1, 1],
+        step: 1.0 / 8192,
+    },
+    stagbeetle: {
+        compressionRate: 2,
+        name: "stag_beetle_832x832x494_uint16.raw",
+        range: [100, 4096],
+        scale: [1, 1, 1],
+        step: 1.0 / 4096,
+    },
+    kingsnake: {
+        compressionRate: 2,
+        name: "kingsnake_1024x1024x795_uint8.raw",
+        range: [100, 150],
+        scale: [1, 1, 1],
+    },
+    chameleon: {
+        compressionRate: 2,
+        name: "chameleon_1024x1024x1080_uint16.raw",
+        range: [11000, 52000],
+        scale: [1, 1, 1],
+        step: 1.0 / 8192,
+    },
+    miranda: {
+        compressionRate: 4,
+        name: "miranda_crate4_1024x1024x1024_float32.raw",
+        range: [1.05, 2.9],
+        scale: [1, 1, 1],
+        step: 1.0 / 8192,
+    },
+    dns_large: {
+        compressionRate: 2,
+        name: "dns_crate2_1920x1440x288_float64.raw",
+        range: [0.75, 1.15],
+        scale: [1, 1440 / 1920, 288 / 1920],
+        step: 1.0 / 8192,
+    },
 };
 
-var fileRegex = /.*\/(\w+)_(\d+)x(\d+)x(\d+)_(\w+)\.*/;
+var fileRegex = /(\w+)_(\d+)x(\d+)x(\d+)_(\w+)\.*/;
 
-var makeVolumeURL =
-    function(name) {
-    if (name.startsWith("local")) {
-        return volumes[name];
-    }
-    return "https://www.dl.dropboxusercontent.com/s/" + volumes[name] + "?dl=1";
-}
-
-var getVolumeDimensions =
-    function(name) {
-    var m = volumes[name].match(fileRegex);
+var getVolumeDimensions = function(filename) {
+    var m = filename.match(fileRegex);
     return [parseInt(m[2]), parseInt(m[3]), parseInt(m[4])];
-}
+};
 
-var getVolumeType =
-    function(name) {
-    var m = volumes[name].match(fileRegex);
-    return m[5];
-}
-
-function
-recomputeSurface() {
+function recomputeSurface()
+{
     requestRecompute = true;
 }
 
-function runBenchmark(benchmark) {
+function runBenchmark(benchmark)
+{
     requestBenchmark = benchmark;
 }
