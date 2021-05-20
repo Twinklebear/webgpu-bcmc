@@ -75,6 +75,11 @@ uvec3 voxel_id_to_voxel(uint id)
     return uvec3(id % 4, (id / 4) % 4, id / 16);
 }
 
+uint compute_voxel_id(uvec3 voxel_pos, uvec3 block_dims)
+{
+    return voxel_pos.x + block_dims.x * (voxel_pos.y + block_dims.y * voxel_pos.z);
+}
+
 float[8] compute_vertex_values(uvec3 voxel_pos, uvec3 block_dims)
 {
     float values[8];
@@ -87,34 +92,10 @@ float[8] compute_vertex_values(uvec3 voxel_pos, uvec3 block_dims)
     return values;
 }
 
-void load_neighbor_voxel(const uint neighbor_id,
-        const uvec3 ghost_voxel_pos,
-        const uvec3 neighbor_voxel_pos,
-        const uvec3 block_dims)
+// Compute the dimensions of the block + its ghost voxels
+uvec3 compute_block_dims_with_ghost(const uvec3 block_pos)
 {
-    const uint neighbor_location = block_locations[neighbor_id];
-    const uint ghost_voxel_id =
-        ghost_voxel_pos.x + block_dims.x * (ghost_voxel_pos.y + block_dims.y * ghost_voxel_pos.z);
-    const uint neighbor_voxel_id =
-        neighbor_voxel_pos.x + 4 * (neighbor_voxel_pos.y + 4 * neighbor_voxel_pos.z);
-    volume_block[ghost_voxel_id] = decompressed[neighbor_location * BLOCK_NUM_VOXELS + neighbor_voxel_id];
-}
-
-// Load the volume block and any ghost voxels needed from neighbors to
-// compute the dual grid vertex values. Returns the block volume dimensions
-uvec3 load_block(const uint block_id)
-{
-    volume_block[gl_LocalInvocationID.x * 2] = 0;
-    volume_block[gl_LocalInvocationID.x * 2 + 1] = 0;
-    voxel_vertices[gl_LocalInvocationID.x] = 0;
-    barrier();
-
-    const uvec3 block_pos = block_id_to_pos(block_id);
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
-
-    // TODO: Need to see if the neighbor blocks are active (e.g., consider a ghost block
-    // made active, but its neighbors aren't)
-    // TODO: Need to handle partial blocks as well
     const uvec3[3] face_neighbors = { uvec3(1, 0, 0), uvec3(0, 1, 0), uvec3(0, 0, 1) };
     const uvec3[3] edge_neighbors = { uvec3(1, 1, 0), uvec3(1, 0, 1), uvec3(0, 1, 1) };
 
@@ -171,11 +152,47 @@ uvec3 load_block(const uint block_id)
             block_dims.z = 4;
         }
     }
+    return block_dims;
+}
+
+void load_voxel(const uint neighbor_id,
+        const uvec3 ghost_voxel_pos,
+        const uvec3 neighbor_voxel_pos,
+        const uvec3 block_dims)
+{
+    const uint neighbor_location = block_locations[neighbor_id];
+    const uint ghost_voxel_id = compute_voxel_id(ghost_voxel_pos, block_dims);
+    const uint neighbor_voxel_id = compute_voxel_id(neighbor_voxel_pos, uvec3(4));
+    volume_block[ghost_voxel_id] = decompressed[neighbor_location * BLOCK_NUM_VOXELS + neighbor_voxel_id];
+}
+
+void write_voxel(const uint block_id, const uvec3 voxel_pos, const float value)
+{
+    const uint block_location = block_locations[block_id];
+    const uint voxel_id = compute_voxel_id(voxel_pos, uvec3(4));
+    decompressed[block_location * BLOCK_NUM_VOXELS + voxel_id] = value;
+}
+
+// Load the volume block and any ghost voxels needed from neighbors to
+// compute the dual grid vertex values. Returns the block volume dimensions
+uvec3 load_block(const uint block_id)
+{
+    volume_block[gl_LocalInvocationID.x * 2] = 0;
+    volume_block[gl_LocalInvocationID.x * 2 + 1] = 0;
+    voxel_vertices[gl_LocalInvocationID.x] = 0;
+    barrier();
+
+    const uvec3 block_pos = block_id_to_pos(block_id);
+    const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+
+    const uvec3[3] face_neighbors = { uvec3(1, 0, 0), uvec3(0, 1, 0), uvec3(0, 0, 1) };
+    const uvec3[3] edge_neighbors = { uvec3(1, 1, 0), uvec3(1, 0, 1), uvec3(0, 1, 1) };
+
+    const uvec3 block_dims = compute_block_dims_with_ghost(block_pos);
 
     const uvec3 voxel_pos = voxel_id_to_voxel(gl_LocalInvocationID.x);
-    load_neighbor_voxel(block_id, voxel_pos, voxel_pos, block_dims);
+    load_voxel(block_id, voxel_pos, voxel_pos, block_dims);
 
-#if 1
     // Load the faces of our face neighbors
     for (uint i = 0; i < 3; ++i) {
         if (block_dims[i] == 5 && voxel_pos[i] == 3) {
@@ -192,12 +209,10 @@ uvec3 load_block(const uint block_id)
             const uvec3 neighbor_block_pos = block_pos + face_neighbors[i];
             const uint neighbor_id = compute_block_id(neighbor_block_pos);
 
-            load_neighbor_voxel(neighbor_id, ghost_voxel_pos, neighbor_voxel_pos, block_dims);
+            load_voxel(neighbor_id, ghost_voxel_pos, neighbor_voxel_pos, block_dims);
         }
     }
-#endif
 
-#if 1
     // Load the scanlines of our edge neighbors
     for (uint i = 0; i < 3; ++i) {
         uvec3 b = block_dims * edge_neighbors[i];
@@ -218,12 +233,10 @@ uvec3 load_block(const uint block_id)
             const uvec3 neighbor_block_pos = block_pos + edge_neighbors[i];
             const uint neighbor_id = compute_block_id(neighbor_block_pos);
 
-            load_neighbor_voxel(neighbor_id, ghost_voxel_pos, neighbor_voxel_pos, block_dims);
+            load_voxel(neighbor_id, ghost_voxel_pos, neighbor_voxel_pos, block_dims);
         }
     }
-#endif
 
-#if 1
     // Load the corner voxel of our corner neighbor
     if (block_dims == uvec3(5) && voxel_pos == uvec3(3)) {
         const uvec3 ghost_voxel_pos = voxel_pos + uvec3(1);
@@ -231,9 +244,8 @@ uvec3 load_block(const uint block_id)
         const uvec3 neighbor_block_pos = block_pos + uvec3(1);
         const uint neighbor_id = compute_block_id(neighbor_block_pos);
 
-        load_neighbor_voxel(neighbor_id, ghost_voxel_pos, uvec3(0), block_dims);
+        load_voxel(neighbor_id, ghost_voxel_pos, uvec3(0), block_dims);
     }
-#endif
 
     barrier();
     return block_dims;
