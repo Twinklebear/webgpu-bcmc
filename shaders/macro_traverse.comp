@@ -1,0 +1,104 @@
+#version 450 core
+
+#define FLT_MAX ( 3.402823466e+38f )
+
+layout(set = 0, binding = 1, std430) buffer BlockRanges
+{
+    vec2 block_ranges[];
+};
+
+layout(set = 0, binding = 4) uniform VolumeParams {
+	ivec3 volume_dims;
+    ivec3 padded_dims;
+    uint image_width;
+    vec3 volume_scale;
+    float isovalue;
+};
+
+layout(set = 0, binding = 0, std140) uniform ViewParams {
+    mat4 proj_view;
+    vec4 eye_pos;
+};
+
+struct RayInfo {
+    uint block_id;
+    vec3 ray_dir;
+    float t;
+}
+
+layout(set = 0, binding = 1, std430) buffer RayInformation {
+    RayInfo rays[];
+};
+
+bool outside_dual_grid(const vec3 p) {
+    return any(lessThan(p, vec3(0))) || any(greaterThanEqual(p, vec3(volume_dims - 1)));
+}
+
+void main() {
+    int ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
+
+    if (rays[ray_index].t == FLT_MAX) {
+        return;
+    }
+
+    // Transform the ray into the dual grid space
+    vec3 volume_translation = vec3(0) - volume_scale * 0.5;
+	vec3 transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale;
+	const vec3 vol_eye = transformed_eye * volume_dims - vec3(0.5);
+    const vec3 grid_ray_dir = normalize(rays[ray_index].ray_dir * volume_dims);
+
+	vec3 p = (vol_eye + rays[ray_index].t * grid_ray_dir);
+    p = clamp(p, vec3(0), vec3(volume_dims - 2));
+    const vec3 inv_grid_ray_dir = 1.0 / grid_ray_dir;
+    const vec3 start_cell = floor(p);
+    const vec3 t_max_neg = (start_cell - vol_eye) * inv_grid_ray_dir;
+    const vec3 t_max_pos = (start_cell + vec3(1) - vol_eye) * inv_grid_ray_dir;
+    const bvec3 is_neg_dir = lessThan(grid_ray_dir, vec3(0));
+    // Pick between positive/negative t_max based on the ray sign
+    vec3 t_max = mix(t_max_pos, t_max_neg, is_neg_dir);
+    const ivec3 grid_step = ivec3(sign(grid_ray_dir));
+    // Note: each voxel is a 1^3 box on the grid
+    const vec3 t_delta = abs(inv_grid_ray_dir);
+
+    /* Note: For isosurface rendering we want to be traversing the dual grid,
+     * where values are at the cell vertices. This traverses the cell-centered
+     * grid where values are at cell centers. Switching to the dual grid just
+     * is an additional -0.5 offset in voxel space (shifting by 0.5 grid cells down)
+     */
+
+    const ivec3 n_blocks = padded_dims / ivec3(4);
+    uint block_id;
+    float t_prev = rays[ray_index].t;
+    float vertex_values[8];
+    vec2 cell_range;
+    color = vec4(0);
+    // Traverse the grid 
+    while (!outside_dual_grid(p) && color.a <= 0.99) {
+        const ivec3 v000 = ivec3(p / 4);
+
+        block_id = v000.x + n_blocks.x
+            * (v000.y + n_blocks.y * v000.z);
+        cell_range = block_ranges[block_id];
+        if (isovalue >= cell_range.x && isovalue <= cell_range.y) {
+            rays[ray_index].block_id = block_id;
+            rays[ray_index].t = t_prev;
+            return;
+        }
+
+        t_prev = min(t_max.x, min(t_max.y, t_max.z));
+
+        // Advance in the grid
+        if (t_prev == t_max.x) {
+            p.x += grid_step.x;
+            t_max.x += t_delta.x;
+        } else if (t_prev == t_max.y) {
+            p.y += grid_step.y;
+            t_max.y += t_delta.y;
+        } else {
+            p.z += grid_step.z;
+            t_max.z += t_delta.z;
+        }
+    }
+}
+
+

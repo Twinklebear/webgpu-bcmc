@@ -43,8 +43,6 @@
         compressedData, dataset.compressionRate, volumeDims, dataset.scale);
     compressedData = null;
 
-    var mcInfo = document.getElementById("mcInfo");
-    var cacheInfo = document.getElementById("cacheInfo");
     var totalMemDisplay = document.getElementById("totalMemDisplay");
     var mcMemDisplay = document.getElementById("mcMemDisplay");
     var cacheMemDisplay = document.getElementById("cacheMemDisplay");
@@ -64,49 +62,6 @@
     }
     isovalueSlider.value = (dataset.range[0] + dataset.range[1]) / 2.0;
     var currentIsovalue = isovalueSlider.value;
-
-    // We don't keep the perf results from the first run
-    var start = performance.now();
-    var totalVerts = await compressedMC.computeSurface(currentIsovalue, {});
-    var end = performance.now();
-    console.log(`total vertices ${totalVerts} in ${end - start}ms`);
-
-    var displayMCInfo = function() {
-        mcInfo.innerHTML = `Extracted surface with ${
-      totalVerts / 3
-    } triangles in ${(end - start).toFixed(2)}ms.
-            Isovalue = ${currentIsovalue}`;
-    };
-    var displayCacheInfo = function() {
-        var percentActive = (compressedMC.numActiveBlocks / compressedMC.totalBlocks) * 100;
-        var percentWithVerts =
-            (compressedMC.numBlocksWithVertices / compressedMC.numActiveBlocks) * 100;
-        cacheInfo.innerHTML = `Cache Space: ${
-      compressedMC.lruCache.cacheSize
-    } blocks
-            (${(
-              (compressedMC.lruCache.cacheSize / compressedMC.totalBlocks) *
-              100
-            ).toFixed(2)} %
-            of ${compressedMC.totalBlocks} total blocks)<br/>
-            # Newly Decompressed: ${compressedMC.newDecompressed}<br/>
-            # Active Blocks: ${
-              compressedMC.numActiveBlocks
-            } (${percentActive.toFixed(2)}%)<br/>
-            # Active with Vertices: ${
-              compressedMC.numBlocksWithVertices
-            } (${percentWithVerts.toFixed(2)}%)<br/>
-            # Cache Slots Available ${
-              compressedMC.lruCache.displayNumSlotsAvailable
-            }`;
-    };
-    displayMCInfo();
-    displayCacheInfo();
-
-    var memUse = compressedMC.reportMemoryUse();
-    mcMemDisplay.innerHTML = memUse[0];
-    cacheMemDisplay.innerHTML = memUse[1];
-    totalMemDisplay.innerHTML = `Total Memory: ${memUse[2]}`;
 
     // Render it!
     const defaultEye = vec3.set(vec3.create(), 0.0, 0.0, 1.0);

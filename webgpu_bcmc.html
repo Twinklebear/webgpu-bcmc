@@ -1,20 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css"
-                           integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm"
-                           crossorigin="anonymous">
+        integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
 
-    <title>WebGPU Block Compressed Marching Cubes</title>
+    <title>WebGPU Volume Raycaster</title>
 </head>
+
 <body>
     <div class="container mt-4">
         <div class="row">
             <div class="col-12 text-center">
-                <h4>WebGPU Block Compressed Marching Cubes</h4>
+                <h4>WebGPU Volume Raycaster</h4>
                 <canvas id="webgpu-canvas" class="img-fluid" width="1280" height="720"></canvas>
             </div>
             <div class="col-12 col-lg-8 mx-auto row">
@@ -34,8 +35,8 @@
             <div class="row col-12 col-lg-8 text-left mx-auto mb-2">
                 <div class="col-12 row text-left">
                     <p>
-                    See the <a href="https://www.willusher.io/publications/teraweb">paper</a> for more details,
-                    or checkout the code on <a href="https://github.com/Twinklebear/webgpu-bcmc">Github!</a>
+                        See the <a href="https://www.willusher.io/publications/teraweb">paper</a> for more details,
+                        or checkout the code on <a href="https://github.com/Twinklebear/webgpu-bcmc">Github!</a>
                     </p>
                 </div>
 
@@ -65,10 +66,10 @@
 
                 <button href="javascript:void(0);" id="runRandomBenchmark" onclick="runBenchmark('random');"
                     type="button" class="btn btn-primary mr-1">Random Benchmark</button>
-                <button href="javascript:void(0);" id="runSweepUp" onclick="runBenchmark('sweepUp');"
-                    type="button" class="btn btn-primary mr-1">Sweep Up Benchmark</button>
-                <button href="javascript:void(0);" id="runSweepDown" onclick="runBenchmark('sweepDown');"
-                    type="button" class="btn btn-primary">Sweep Down Benchmark</button>
+                <button href="javascript:void(0);" id="runSweepUp" onclick="runBenchmark('sweepUp');" type="button"
+                    class="btn btn-primary mr-1">Sweep Up Benchmark</button>
+                <button href="javascript:void(0);" id="runSweepDown" onclick="runBenchmark('sweepDown');" type="button"
+                    class="btn btn-primary">Sweep Down Benchmark</button>
             </div>
         </div>
     </div>
@@ -83,7 +84,7 @@
     <script src="js/radix_sort_by_key.js"></script>
     <script src="js/run_benchmark.js"></script>
     <script src="js/compressed_marching_cubes.js"></script>
-    <script src="js/bcmc.js"></script>
+    <script src="js/render.js"></script>
 </body>
-</html>
 
+</html>
