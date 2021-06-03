@@ -10,12 +10,14 @@ layout(set = 0, binding = 0, std140) uniform ViewParams {
     vec4 eye_pos;
 };
 
-layout(set = 0, binding = 2) uniform VolumeParams {
-	ivec3 volume_dims;
-    ivec3 padded_dims;
-    uint image_width;
-    vec3 volume_scale;
+layout(set = 0, binding = 2, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+    uint max_bits;
     float isovalue;
+    uint image_width;
 };
 
 void main(void) {
