@@ -156,14 +156,14 @@ var VolumeRaycaster = function (device) {
                 binding: 1,
                 visibility: GPUShaderStage.FRAGMENT,
                 buffer: {
-                    type: "uniform",
+                    type: "storage",
                 }
             },
             {
                 binding: 2,
                 visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
                 buffer: {
-                    type: "storage",
+                    type: "uniform",
                 }
             },
         ],
@@ -175,7 +175,7 @@ var VolumeRaycaster = function (device) {
         usage: GPUBufferUsage.VERTEX,
         mappedAtCreation: true,
     });
-    new Float32Array(dataBuf.getMappedRange()).set([
+    new Float32Array(this.dataBuf.getMappedRange()).set([
         1, 0, 0, 0, 0, 0, 1, 1, 0,
 
         0, 1, 0, 1, 1, 0, 0, 0, 0,
@@ -200,7 +200,7 @@ var VolumeRaycaster = function (device) {
 
         1, 0, 0, 1, 0, 1, 0, 0, 0,
     ]);
-    dataBuf.unmap();
+    this.dataBuf.unmap();
 
     // Setup render outputs
     var swapChainFormat = "bgra8unorm";
@@ -287,7 +287,7 @@ var VolumeRaycaster = function (device) {
         },
     };
 
-    var macroTraverseBGLayout = device.createBindGroupLayout({
+    this.macroTraverseBGLayout = device.createBindGroupLayout({
         entries: [
             {
                 binding: 0,
@@ -323,7 +323,7 @@ var VolumeRaycaster = function (device) {
     this.macroTraversePipeline = device.createComputePipeline({
         layout: device.createPipelineLayout({
             bindGroupLayouts: [
-                macroTraverseBGLayout,
+                this.macroTraverseBGLayout,
             ],
         }),
         compute: {
@@ -365,7 +365,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
             mappedAtCreation: true,
         });
         {
-            var mapping = volumeInfoBuffer.getMappedRange();
+            var mapping = this.volumeInfoBuffer.getMappedRange();
             var maxBits = (1 << (2 * 3)) * compressionRate;
             var buf = new Uint32Array(mapping);
             buf.set(volumeDims);
@@ -376,8 +376,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
             var buf = new Float32Array(mapping);
             buf.set(volumeScale, 8);
         }
-        volumeInfoBuffer.unmap();
-        this.volumeInfoBuffer = volumeInfoBuffer;
+        this.volumeInfoBuffer.unmap();
 
         var compressedBuffer = this.device.createBuffer({
             size: volume.byteLength,
@@ -513,7 +512,7 @@ VolumeRaycaster.prototype.computeInitialRays = async function (viewParamUpload) 
     initialRaysPass.draw(12 * 3, 1, 0, 0);
 
     initialRaysPass.endPass();
-    device.queue.submit([commandEncoder.finish()]);
+    this.device.queue.submit([commandEncoder.finish()]);
 };
 
 VolumeRaycaster.prototype.macroTraverse = async function (isovalue) {

@@ -1,0 +1,90 @@
+#version 450 core
+
+#include "sort_data.comp"
+
+layout(set = 1, binding = 0, std430) buffer InputKeys
+{
+    uint input_keys[];
+};
+
+layout(set = 1, binding = 1, std430) buffer InputValues
+{
+    uint input_values[];
+};
+
+layout(set = 1, binding = 2, std430) buffer OutputKeys
+{
+    uint output_keys[];
+};
+
+layout(set = 1, binding = 3, std430) buffer OutputValues
+{
+    uint output_values[];
+};
+
+layout(set = 2, binding = 0, std140) uniform NumWorkGroups
+{
+    uint work_groups_x;
+};
+
+uint upper_bound(uint start, uint count, uint element)
+{
+    while (count > 0) {
+        uint i = start + count / 2;
+        if (element >= input_keys[i]) {
+            start = i + 1;
+            count -= count / 2 + 1;
+        } else {
+            count = count / 2;
+        }
+    }
+    return start;
+}
+
+uint lower_bound(uint start, uint count, uint element)
+{
+    while (count > 0) {
+        uint i = start + count / 2;
+        if (input_keys[i] < element) {
+            start = i + 1;
+            count -= count / 2 + 1;
+        } else {
+            count = count / 2;
+        }
+    }
+    return start;
+}
+
+void main(void)
+{
+    // Compute the merge chunk size, which is based on the number of work groups and input data size
+    const uint aligned_size = next_pow2(uint(ceil(float(size) / SORT_CHUNK_SIZE))) * SORT_CHUNK_SIZE;
+    const uint merge_output_size = aligned_size / work_groups_x;
+    const uint merge_chunk_size = merge_output_size / 2;
+
+    // Load the first set of elements to merge
+    const uint offs = gl_WorkGroupID.x * merge_output_size;
+
+    // Each work group merges two chunks, each thread is responsible for
+    // two elements in the chunks, which it merges into the sorted output
+    // Loop through and merge each SORT_CHUNK_SIZE group of elements from merge_chunk_size
+    for (uint i = 0; i < merge_chunk_size / SORT_CHUNK_SIZE; ++i) {
+        const uint a_in = offs + i * SORT_CHUNK_SIZE + gl_LocalInvocationID.x;
+        const uint b_in = offs + merge_chunk_size + i * SORT_CHUNK_SIZE + gl_LocalInvocationID.x;
+        const uint base_idx = gl_LocalInvocationID.x + i * SORT_CHUNK_SIZE;
+        // Could be done better, but short on time 
+        // Upper bound in b
+        const uint a_loc = base_idx
+            + upper_bound(offs + merge_chunk_size, merge_chunk_size, input_keys[a_in])
+            - merge_chunk_size;
+        // Lower bound in a
+        const uint b_loc = base_idx + lower_bound(offs, merge_chunk_size, input_keys[b_in]);
+
+        output_keys[a_loc] = input_keys[a_in];
+        output_values[a_loc] = input_values[a_in];
+
+        output_keys[b_loc] = input_keys[b_in];
+        output_values[b_loc] = input_values[b_in];
+    }
+}
+

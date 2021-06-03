@@ -1,13 +1,7 @@
 (async () => {
     var adapter = await navigator.gpu.requestAdapter();
 
-    // TODO: Waiting on Chrome Canary to support passing these limits through
-    var gpuDeviceDesc = {
-        nonGuaranteedLimits: {
-            maxStorageBuffersPerShaderStage: 8,
-        },
-    };
-    var device = await adapter.requestDevice(gpuDeviceDesc);
+    var device = await adapter.requestDevice();
 
     var canvas = document.getElementById("webgpu-canvas");
     var context = canvas.getContext("gpupresent");
@@ -124,7 +118,7 @@
     requestAnimationFrame(animationFrame);
 
     var upload = device.createBuffer({
-        size: viewParamSize,
+        size: 20 * 4,
         usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
     });
 
@@ -222,22 +216,6 @@
                   }
                   */
         }
-
-        renderPassDesc.colorAttachments[0].view = swapChain.getCurrentTexture().createView();
-
-        var commandEncoder = device.createCommandEncoder();
-
-        commandEncoder.copyBufferToBuffer(upload, 0, viewParamBuf, 0, viewParamSize);
-
-        var renderPass = commandEncoder.beginRenderPass(renderPassDesc);
-        if (totalVerts > 0) {
-            renderPass.setPipeline(renderPipeline);
-            renderPass.setBindGroup(0, viewParamsBindGroup);
-            renderPass.setVertexBuffer(0, compressedMC.vertexBuffer);
-            renderPass.draw(totalVerts, 1, 0, 0);
-        }
-        renderPass.endPass();
-        device.queue.submit([commandEncoder.finish()]);
 
         // Measure render time by waiting for the work done
         await device.queue.onSubmittedWorkDone();

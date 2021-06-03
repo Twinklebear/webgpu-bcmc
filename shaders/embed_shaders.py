@@ -25,6 +25,9 @@ shaders = [
     "lru_cache_age_slots.comp",
     "lru_cache_extract_slot_available.comp",
     "macro_traverse.comp",
+    "radix_sort_chunk.comp",
+    "reverse_buffer.comp",
+    "merge_sorted_chunks.comp",
 ]
 
 try:
