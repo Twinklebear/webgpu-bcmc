@@ -256,7 +256,8 @@ var VolumeRaycaster = function (device) {
                             srcFactor: "one",
                             dstFactor: "one-minus-src-alpha",
                         },
-                    }
+                    },
+                    writeMask: 0,
                 },
             ],
         },
