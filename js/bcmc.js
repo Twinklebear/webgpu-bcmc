@@ -7,7 +7,7 @@
             maxStorageBuffersPerShaderStage: 8,
         },
     };
-    var device = await adapter.requestDevice(gpuDeviceDesc);
+    var device = await adapter.requestDevice();
 
     var canvas = document.getElementById("webgpu-canvas");
     var context = canvas.getContext("gpupresent");
