@@ -2,12 +2,7 @@
 
 #define FLT_MAX ( 3.402823466e+38f )
 
-layout(set = 0, binding = 1, std430) buffer BlockRanges
-{
-    vec2 block_ranges[];
-};
-
-layout(set = 0, binding = 2, std140) uniform VolumeParams
+layout(set = 0, binding = 0, std140) uniform VolumeParams
 {
     uvec4 volume_dims;
     uvec4 padded_dims;
@@ -17,16 +12,21 @@ layout(set = 0, binding = 2, std140) uniform VolumeParams
     uint image_width;
 };
 
-layout(set = 0, binding = 0, std140) uniform ViewParams {
+layout(set = 0, binding = 1, std140) uniform ViewParams {
     mat4 proj_view;
     vec4 eye_pos;
+};
+
+layout(set = 0, binding = 2, std430) buffer BlockRanges
+{
+    vec2 block_ranges[];
 };
 
 struct RayInfo {
     uint block_id;
     vec3 ray_dir;
     float t;
-}
+};
 
 layout(set = 0, binding = 3, std430) buffer RayInformation {
     RayInfo rays[];
@@ -37,17 +37,17 @@ bool outside_dual_grid(const vec3 p) {
 }
 
 void main() {
-    int ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
+    uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
 
     if (rays[ray_index].t == FLT_MAX) {
         return;
     }
 
     // Transform the ray into the dual grid space
-    vec3 volume_translation = vec3(0) - volume_scale * 0.5;
-	vec3 transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale;
-	const vec3 vol_eye = transformed_eye * volume_dims - vec3(0.5);
-    const vec3 grid_ray_dir = normalize(rays[ray_index].ray_dir * volume_dims);
+    vec3 volume_translation = vec3(0) - volume_scale.xyz * 0.5;
+	vec3 transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale.xyz;
+	const vec3 vol_eye = transformed_eye * volume_dims.xyz - vec3(0.5);
+    const vec3 grid_ray_dir = normalize(rays[ray_index].ray_dir * volume_dims.xyz);
 
 	vec3 p = (vol_eye + rays[ray_index].t * grid_ray_dir);
     p = clamp(p, vec3(0), vec3(volume_dims - 2));
@@ -68,14 +68,13 @@ void main() {
      * is an additional -0.5 offset in voxel space (shifting by 0.5 grid cells down)
      */
 
-    const ivec3 n_blocks = padded_dims / ivec3(4);
+    const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
     uint block_id;
     float t_prev = rays[ray_index].t;
     float vertex_values[8];
     vec2 cell_range;
-    color = vec4(0);
     // Traverse the grid 
-    while (!outside_dual_grid(p) && color.a <= 0.99) {
+    while (!outside_dual_grid(p)) {
         const ivec3 v000 = ivec3(p / 4);
 
         block_id = v000.x + n_blocks.x
@@ -101,6 +100,7 @@ void main() {
             t_max.z += t_delta.z;
         }
     }
+    rays[ray_index].t == FLT_MAX;
 }
 
 

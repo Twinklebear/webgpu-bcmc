@@ -21,8 +21,8 @@ layout(set = 0, binding = 2, std140) uniform VolumeParams
 };
 
 void main(void) {
-	vec3 volume_translation = vec3(0) - volume_scale * 0.5;
-	gl_Position = proj_view * vec4(pos * volume_scale + volume_translation, 1);
-	transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale;
+	vec3 volume_translation = vec3(0) - volume_scale.xyz * 0.5;
+	gl_Position = proj_view * vec4(pos * volume_scale.xyz + volume_translation, 1);
+	transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale.xyz;
 	vray_dir = pos - transformed_eye;
 }

@@ -6,8 +6,8 @@ var VolumeRaycaster = function (device) {
     this.numVertices = 0;
     this.numBlocksWithVertices = 0;
 
-    var canvas = document.getElementById("webgpu-canvas");
-    var context = canvas.getContext("gpupresent");
+    this.canvas = document.getElementById("webgpu-canvas");
+    var context = this.canvas.getContext("gpupresent");
 
     // Max dispatch size for more computationally heavy kernels
     // which might hit TDR on lower power devices
@@ -139,17 +139,11 @@ var VolumeRaycaster = function (device) {
     // We'll need a max of canvas.width * canvas.height RayInfo structs in the buffer,
     // so just allocate it once up front
     this.rayInformationBuffer = device.createBuffer({
-        size: canvas.width * canvas.size * 20,
+        size: this.canvas.width * this.canvas.height * 20,
         usage: GPUBufferUsage.STORAGE,
     });
 
-    this.volumeInfoBuffer = this.device.createBuffer({
-        size: 16 * 4,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        mappedAtCreation: true,
-    });
-
-    var computeInitialRaysBGLayout = device.createBindGroupLayout({
+    this.computeInitialRaysBGLayout = device.createBindGroupLayout({
         entries: [
             {
                 binding: 0,
@@ -171,30 +165,6 @@ var VolumeRaycaster = function (device) {
                 buffer: {
                     type: "storage",
                 }
-            },
-        ],
-    });
-
-    this.initialRaysBindGroup = device.createBindGroup({
-        layout: computeInitialRaysBGLayout,
-        entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: this.viewParamBuf,
-                },
-            },
-            {
-                binding: 1,
-                resource: {
-                    buffer: this.rayInformationBuffer,
-                },
-            },
-            {
-                binding: 2,
-                resource: {
-                    buffer: this.volumeInfoBuffer,
-                },
             },
         ],
     });
@@ -243,8 +213,8 @@ var VolumeRaycaster = function (device) {
     var depthFormat = "depth24plus-stencil8";
     var depthTexture = device.createTexture({
         size: {
-            width: canvas.width,
-            height: canvas.height,
+            width: this.canvas.width,
+            height: this.canvas.height,
             depth: 1,
         },
         format: depthFormat,
@@ -253,7 +223,7 @@ var VolumeRaycaster = function (device) {
 
     this.initialRaysPipeline = device.createRenderPipeline({
         layout: device.createPipelineLayout({
-            bindGroupLayouts: [computeInitialRaysBGLayout],
+            bindGroupLayouts: [this.computeInitialRaysBGLayout],
         }),
         vertex: {
             module: device.createShaderModule({ code: compute_initial_rays_vert_spv }),
@@ -317,6 +287,53 @@ var VolumeRaycaster = function (device) {
         },
     };
 
+    var macroTraverseBGLayout = device.createBindGroupLayout({
+        entries: [
+            {
+                binding: 0,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "uniform",
+                }
+            },
+            {
+                binding: 1,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "uniform",
+                }
+            },
+            {
+                binding: 2,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
+            },
+            {
+                binding: 3,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
+            }
+        ],
+    });
+
+    this.macroTraversePipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout({
+            bindGroupLayouts: [
+                macroTraverseBGLayout,
+            ],
+        }),
+        compute: {
+            module: device.createShaderModule({
+                code: macro_traverse_comp_spv,
+            }),
+            entryPoint: "main",
+        },
+    });
+
 };
 
 VolumeRaycaster.prototype.setCompressedVolume =
@@ -342,6 +359,11 @@ VolumeRaycaster.prototype.setCompressedVolume =
             64 * 4,
             this.totalBlocks);
 
+        this.volumeInfoBuffer = this.device.createBuffer({
+            size: 16 * 4,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            mappedAtCreation: true,
+        });
         {
             var mapping = volumeInfoBuffer.getMappedRange();
             var maxBits = (1 << (2 * 3)) * compressionRate;
@@ -349,7 +371,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
             buf.set(volumeDims);
             buf.set(this.paddedDims, 4);
             buf.set([maxBits], 12);
-            buf.set([canvas.width], 14);
+            buf.set([this.canvas.width], 14);
 
             var buf = new Float32Array(mapping);
             buf.set(volumeScale, 8);
@@ -373,6 +395,60 @@ VolumeRaycaster.prototype.setCompressedVolume =
         });
 
         await this.computeBlockRanges();
+
+        this.initialRaysBindGroup = this.device.createBindGroup({
+            layout: this.computeInitialRaysBGLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: {
+                        buffer: this.viewParamBuf,
+                    },
+                },
+                {
+                    binding: 1,
+                    resource: {
+                        buffer: this.rayInformationBuffer,
+                    },
+                },
+                {
+                    binding: 2,
+                    resource: {
+                        buffer: this.volumeInfoBuffer,
+                    },
+                },
+            ],
+        });
+
+        this.macroTraverseBindGroup = this.device.createBindGroup({
+            layout: this.macroTraverseBGLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: {
+                        buffer: this.volumeInfoBuffer,
+                    },
+                },
+                {
+                    binding: 1,
+                    resource: {
+                        buffer: this.viewParamBuf,
+                    },
+                },
+                {
+                    binding: 2,
+                    resource: {
+                        buffer: this.blockRangesBuffer,
+                    },
+                },
+                {
+                    binding: 3,
+                    resource: {
+                        buffer: this.rayInformationBuffer,
+                    },
+                },
+            ],
+        });
     };
 
 VolumeRaycaster.prototype.computeBlockRanges = async function () {
@@ -425,7 +501,7 @@ VolumeRaycaster.prototype.computeInitialRays = async function (viewParamUpload) 
         .getCurrentTexture()
         .createView();
 
-    var commandEncoder = device.createCommandEncoder();
+    var commandEncoder = this.device.createCommandEncoder();
 
     commandEncoder.copyBufferToBuffer(viewParamUpload, 0, this.viewParamBuf, 0, 20 * 4);
 
@@ -438,39 +514,9 @@ VolumeRaycaster.prototype.computeInitialRays = async function (viewParamUpload) 
 
     initialRaysPass.endPass();
     device.queue.submit([commandEncoder.finish()]);
-}
+};
 
-VolumeRaycaster.prototype.computeSurface = async function (isovalue, perfTracker) {
-    console.log(`=====\nIsovalue = ${isovalue}`);
-    // TODO: Conditionally free if memory use of VBO is very high to make
-    // sure we don't OOM with some of our temp allocations?
-    // This isn't quite enough to get miranda running on the 4GB VRAM surface
-    // Adds about 100ms cost on RTX2070 on miranda
-    /*
-      if (this.vertexBuffer) {
-          this.vertexBuffer.destroy();
-          this.numVerticesStorage = 0;
-      }
-      */
-
-    if (perfTracker.computeActiveBlocks === undefined) {
-        perfTracker.computeActiveBlocks = [];
-        perfTracker.numActiveBlocks = [];
-
-        perfTracker.cacheUpdate = [];
-        perfTracker.numBlocksDecompressed = [];
-        perfTracker.decompression = [];
-
-        perfTracker.compactActiveIDs = [];
-        perfTracker.computeBlockHasVertices = [];
-
-        perfTracker.numBlocksWithVertices = [];
-        perfTracker.compactBlocksWithVertices = [];
-
-        perfTracker.numVertices = [];
-        perfTracker.computeVertices = [];
-    }
-
+VolumeRaycaster.prototype.macroTraverse = async function (isovalue) {
     // Upload the isovalue
     await this.uploadIsovalueBuf.mapAsync(GPUMapMode.WRITE);
     new Float32Array(this.uploadIsovalueBuf.getMappedRange()).set([isovalue]);
@@ -478,200 +524,16 @@ VolumeRaycaster.prototype.computeSurface = async function (isovalue, perfTracker
 
     var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(this.uploadIsovalueBuf, 0, this.volumeInfoBuffer, 52, 4);
+
+    var pass = commandEncoder.beginComputePass();
+
+    // Decompress each block and compute its range
+    pass.setPipeline(this.macroTraversePipeline);
+    pass.setBindGroup(0, this.macroTraverseBindGroup);
+    pass.dispatch(this.canvas.width, this.canvas.height, 1);
+
+    pass.endPass();
     this.device.queue.submit([commandEncoder.finish()]);
-
-    // Compute list of active blocks
-    var start = performance.now();
-    var numActiveBlocks = await this.computeActiveBlocks();
-    var end = performance.now();
-    console.log(`Compute active took ${end - start}ms`);
-    console.log(`# of active blocks = ${numActiveBlocks}`);
-
-    perfTracker.computeActiveBlocks.push(end - start);
-    perfTracker.numActiveBlocks.push(numActiveBlocks);
-
-    if (numActiveBlocks == 0) {
-        perfTracker.cacheUpdate.push(0);
-        perfTracker.numBlocksDecompressed.push(0);
-        perfTracker.decompression.push(0);
-        perfTracker.compactActiveIDs.push(0);
-        perfTracker.computeBlockHasVertices.push(0);
-        perfTracker.numBlocksWithVertices.push(0);
-        perfTracker.compactBlocksWithVertices.push(0);
-        perfTracker.numVertices.push(0);
-        perfTracker.computeVertices.push(0);
-        return 0;
-    }
-
-    // Update cache to get offsets within it where we can decompress the new blocks we need to
-    // cache
-    var start = performance.now();
-    // TODO: want a way to explicitly clear the cache so we can time an empty cache update
-    // without having the first launch overhead also timed
-    var [nBlocksToDecompress, decompressBlockIDs] =
-        await this.lruCache.update(this.blockActiveBuffer, perfTracker);
-    var end = performance.now();
-    this.newDecompressed = nBlocksToDecompress;
-    console.log(`# Blocks to decompress ${nBlocksToDecompress}`);
-    console.log(`Cache update took ${end - start}ms`);
-    perfTracker.cacheUpdate.push(end - start);
-    perfTracker.numBlocksDecompressed.push(nBlocksToDecompress);
-
-    if (numActiveBlocks > this.numActiveBlocksStorage) {
-        this.numActiveBlocksStorage = Math.ceil(Math.min(
-            this.totalBlocks, Math.max(numActiveBlocks, this.numActiveBlocksStorage * 1.5)));
-        var scanAlignedSize = this.scanPipeline.getAlignedSize(this.numActiveBlocksStorage);
-
-        // Explicitly release the old buffers first, so we don't have to wait for the GC
-        // to free up the GPU memory
-        if (this.blockHasVertices) {
-            this.activeBlockIDs.destroy();
-            this.blockHasVertices.destroy();
-            this.blockHasVertsOffsets.destroy();
-        }
-
-        this.activeBlockIDs = this.device.createBuffer({
-            size: this.numActiveBlocksStorage * 4,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-        });
-        this.blockHasVertices = this.device.createBuffer({
-            size: this.numActiveBlocksStorage * 4,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-        });
-        this.blockHasVertsOffsets = this.device.createBuffer({
-            size: scanAlignedSize * 4,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-        });
-
-        // Recreate the smaller scanners
-        this.blockWithVerticesScanner =
-            this.scanPipeline.prepareGPUInput(this.blockHasVertsOffsets, scanAlignedSize);
-    }
-    this.numActiveBlocks = numActiveBlocks;
-
-    // Decompress the new blocks we need into the cache
-    var start = performance.now();
-    if (nBlocksToDecompress > 0) {
-        await this.decompressBlocks(nBlocksToDecompress, decompressBlockIDs);
-        decompressBlockIDs.destroy();
-    }
-    var end = performance.now();
-    console.log(`Block decompression took ${end - start}`);
-    perfTracker.decompression.push(end - start);
-
-    // NOTE: we need to keep active block IDs and offsets as well, but as a separate thing
-    // from the cache. The active block IDs & offsets are different from the cached ones,
-    // which may not longer contain the surface
-    // Compact the list of active block IDs
-    var start = performance.now();
-    await this.streamCompact.compactActiveIDs(this.totalBlocks,
-        this.blockActiveBuffer,
-        this.activeBlockOffsets,
-        this.activeBlockIDs);
-    var end = performance.now();
-    console.log(`Compact active block IDs took ${end - start}ms`);
-    perfTracker.compactActiveIDs.push(end - start);
-
-    var start = performance.now();
-    await this.computeBlockHasVertices();
-    var end = performance.now();
-    perfTracker.computeBlockHasVertices.push(end - start);
-
-    // Pass over the blocks and filter out the ones which won't output vertices
-    // Our compacted output will be the "active block index", which is the location of the
-    // actual block id within the block_ids/block_offsets/vertex_offsets buffers
-    var start = performance.now();
-    var commandEncoder = this.device.createCommandEncoder();
-    commandEncoder.copyBufferToBuffer(
-        this.blockHasVertices, 0, this.blockHasVertsOffsets, 0, this.numActiveBlocks * 4);
-    this.device.queue.submit([commandEncoder.finish()]);
-
-    var numBlocksWithVertices = await this.blockWithVerticesScanner.scan(this.numActiveBlocks);
-    console.log(
-        `Of ${numActiveBlocks} active, only ${numBlocksWithVertices} will output vertices`);
-    if (numBlocksWithVertices > this.numBlocksWithVerticesStorage) {
-        this.numBlocksWithVerticesStorage = Math.floor(Math.min(
-            this.totalBlocks,
-            Math.max(numBlocksWithVertices, this.numBlocksWithVerticesStorage * 1.5)));
-        var scanAlignedSize =
-            this.scanPipeline.getAlignedSize(this.numBlocksWithVerticesStorage);
-
-        if (this.blocksWithVertices) {
-            this.blocksWithVertices.destroy();
-            this.blockVertexOffsets.destroy();
-        }
-        this.blocksWithVertices = this.device.createBuffer({
-            size: this.numBlocksWithVerticesStorage * 4,
-            usage: GPUBufferUsage.STORAGE,
-        });
-        this.blockVertexOffsets = this.device.createBuffer({
-            size: scanAlignedSize * 4,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-        });
-
-        this.blockVertexOffsetsScanner =
-            this.scanPipeline.prepareGPUInput(this.blockVertexOffsets, scanAlignedSize);
-    }
-    this.numBlocksWithVertices = numBlocksWithVertices;
-
-    await this.streamCompact.compactActiveIDs(this.numActiveBlocks,
-        this.blockHasVertices,
-        this.blockHasVertsOffsets,
-        this.blocksWithVertices);
-    var end = performance.now();
-    console.log(`Active blocks w/ verts reduction took ${end - start}ms`);
-
-    perfTracker.numBlocksWithVertices.push(numBlocksWithVertices);
-    perfTracker.compactBlocksWithVertices.push(end - start);
-
-    // For each block which will output vertices, compute the number of vertices its voxels
-    // and the total for the block
-    var start = performance.now();
-    var numVertices = await this.computeBlockVertexCounts();
-    var end = performance.now();
-    console.log(`Vertex count computation took ${end - start}ms`);
-    console.log(`# Vertices: ${numVertices}`);
-    perfTracker.numVertices.push(numVertices);
-    if (numVertices == 0) {
-        perfTracker.computeVertices.push(0);
-        return 0;
-    }
-
-    if (numVertices > this.numVerticesStorage) {
-        this.numVerticesStorage =
-            Math.floor(Math.max(numVertices, this.numVerticesStorage * 1.5));
-
-        if (this.vertexBuffer) {
-            this.vertexBuffer.destroy();
-        }
-        this.vertexBuffer = this.device.createBuffer({
-            size: this.numVerticesStorage * 2 * 4,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_SRC,
-        });
-    }
-    this.numVertices = numVertices;
-
-    // For each block:
-    // Compute the active voxels within the block. We know there should be at least one,
-    // since the block + neighboring halo voxels contain the isovalue
-    // The active voxel IDs should be written to a single global buffer, so all blocks
-    // basically appear as one giant volume When we do the scan here to compute the total
-    // number of active voxels we need to keep each blocks offset in the compacted buffer and
-    // its output number of voxels
-
-    // Compute the number of vertices which will be output by each voxel in the blocks
-    // This also needs to write to a global buffer which is shared across the blocks,
-    // so that our output can be a single compact vertex buffer
-    // So we need to do the same thing for the scan and tracking the offsets for each block
-    // to start at when we compute it.
-    var start = performance.now();
-    await this.computeVertices();
-    var end = performance.now();
-    console.log(`Vertex computation took ${end - start}ms`);
-    perfTracker.computeVertices.push(end - start);
-
-    // Compute the vertices and output them to the single compacted buffer
-    return numVertices;
 };
 
 VolumeRaycaster.prototype.decompressBlocks =
@@ -755,101 +617,3 @@ VolumeRaycaster.prototype.decompressBlocks =
         await this.device.queue.onSubmittedWorkDone();
         dispatchChunkOffsetsBuf.destroy();
     };
-
-VolumeRaycaster.prototype.computeBlockHasVertices = async function () {
-    this.computeBlockVertexInfoBG = this.device.createBindGroup({
-        layout: this.computeBlockVertsInfoBGLayout,
-        entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: this.volumeInfoBuffer,
-                },
-            },
-            {
-                binding: 1,
-                resource: {
-                    buffer: this.triTable,
-                },
-            },
-            {
-                binding: 2,
-                resource: {
-                    buffer: this.lruCache.cache,
-                },
-            },
-            {
-                binding: 3,
-                resource: {
-                    buffer: this.blockActiveBuffer,
-                },
-            },
-            {
-                binding: 4,
-                resource: {
-                    buffer: this.lruCache.cachedItemSlots,
-                },
-            },
-            {
-                binding: 5,
-                resource: {
-                    buffer: this.activeBlockIDs,
-                },
-            },
-        ],
-    });
-    var blockHasVerticesBG = this.device.createBindGroup({
-        layout: this.sb1Binding0BGLayout,
-        entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: this.blockHasVertices,
-                },
-            },
-        ],
-    });
-
-    var commandEncoder = this.device.createCommandEncoder();
-    var pass = commandEncoder.beginComputePass();
-    pass.setPipeline(this.computeBlockHasVerticesPipeline);
-    pass.setBindGroup(0, this.computeBlockVertexInfoBG);
-    pass.setBindGroup(1, blockHasVerticesBG);
-    pass.dispatch(this.numActiveBlocks, 1, 1);
-    pass.endPass();
-    this.device.queue.submit([commandEncoder.finish()]);
-
-    await this.device.queue.onSubmittedWorkDone();
-};
-
-VolumeRaycaster.prototype.computeBlockVertexCounts = async function () {
-    this.blockVertexOffsetsBG = this.device.createBindGroup({
-        layout: this.sb2Binding01BGLayout,
-        entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: this.blockVertexOffsets,
-                },
-            },
-            {
-                binding: 1,
-                resource: {
-                    buffer: this.blocksWithVertices,
-                },
-            },
-        ],
-    });
-
-    var commandEncoder = this.device.createCommandEncoder();
-    var pass = commandEncoder.beginComputePass();
-    pass.setPipeline(this.computeBlockVertexCountsPipeline);
-    pass.setBindGroup(0, this.computeBlockVertexInfoBG);
-    pass.setBindGroup(1, this.blockVertexOffsetsBG);
-    pass.dispatch(this.numBlocksWithVertices, 1, 1);
-    pass.endPass();
-    this.device.queue.submit([commandEncoder.finish()]);
-
-    var total = await this.blockVertexOffsetsScanner.scan(this.numBlocksWithVertices);
-    return total;
-};

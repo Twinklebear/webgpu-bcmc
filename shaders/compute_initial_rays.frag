@@ -9,7 +9,7 @@ struct RayInfo {
     uint block_id;
     vec3 ray_dir;
     float t;
-}
+};
 
 layout(set = 0, binding = 1, std430) buffer RayInformation {
     RayInfo rays[];
@@ -40,17 +40,17 @@ void main() {
     vec3 ray_dir = normalize(vray_dir);
 
     // Transform the ray into the dual grid space and intersect with the dual grid bounds
-	const vec3 vol_eye = transformed_eye * volume_dims - vec3(0.5);
-    const vec3 grid_ray_dir = normalize(ray_dir * volume_dims);
+	const vec3 vol_eye = transformed_eye * volume_dims.xyz - vec3(0.5);
+    const vec3 grid_ray_dir = normalize(ray_dir * volume_dims.xyz);
 
-	vec2 t_hit = intersect_box(vol_eye, grid_ray_dir, vec3(0), volume_dims - 1);
+	vec2 t_hit = intersect_box(vol_eye, grid_ray_dir, vec3(0), volume_dims.xyz - 1);
     
 	// We don't want to sample voxels behind the eye if it's
 	// inside the volume, so keep the starting point at or in front
 	// of the eye
 	t_hit.x = max(t_hit.x, 0.0);
     
-    int index = gl_FragCoord.x + image_width * gl_FragCoord.y
+    uint index = uint(gl_FragCoord.x) + image_width * uint(gl_FragCoord.y);
 	if (t_hit.x > t_hit.y) {
         rays[index].block_id = UINT_MAX;
         rays[index].ray_dir = ray_dir;

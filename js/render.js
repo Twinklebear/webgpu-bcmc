@@ -29,7 +29,7 @@
         volumeURL = "/models/" + zfpDataName;
     }
     var compressedData =
-        await fetch(volumeURL).then((res) => res.arrayBuffer().then(function(arr) {
+        await fetch(volumeURL).then((res) => res.arrayBuffer().then(function (arr) {
             return new Uint8Array(arr);
         }));
 
@@ -38,8 +38,8 @@
         return;
     }
 
-    var compressedMC = new CompressedMarchingCubes(device);
-    await compressedMC.setCompressedVolume(
+    var volumeRC = new VolumeRaycaster(device);
+    await volumeRC.setCompressedVolume(
         compressedData, dataset.compressionRate, volumeDims, dataset.scale);
     compressedData = null;
 
@@ -86,7 +86,7 @@
     var cameraChanged = true;
 
     var controller = new Controller();
-    controller.mousemove = function(prev, cur, evt) {
+    controller.mousemove = function (prev, cur, evt) {
         if (evt.buttons == 1) {
             cameraChanged = true;
             camera.rotate(prev, cur);
@@ -99,14 +99,14 @@
             totalTimeMS = 0;
         }
     };
-    controller.wheel = function(amt) {
+    controller.wheel = function (amt) {
         cameraChanged = true;
         camera.zoom(amt * 0.05);
         numFrames = 0;
         totalTimeMS = 0;
     };
     controller.pinch = controller.wheel;
-    controller.twoFingerDrag = function(drag) {
+    controller.twoFingerDrag = function (drag) {
         cameraChanged = true;
         camera.pan(drag);
         numFrames = 0;
@@ -114,113 +114,7 @@
     };
     controller.registerForCanvas(canvas);
 
-    var swapChainFormat = "bgra8unorm";
-    var swapChain = context.configureSwapChain({
-        device: device,
-        format: swapChainFormat,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
-    var depthTexture = device.createTexture({
-        size: {
-            width: canvas.width,
-            height: canvas.height,
-            depth: 1,
-        },
-        format: "depth24plus-stencil8",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
-    var renderPassDesc = {
-        colorAttachments: [
-            {
-                view: undefined,
-                loadValue: [1.0, 1.0, 1.0, 1],
-            },
-        ],
-        depthStencilAttachment: {
-            view: depthTexture.createView(),
-            depthLoadValue: 1.0,
-            depthStoreOp: "store",
-            stencilLoadValue: 0,
-            stencilStoreOp: "store",
-        },
-    };
-
-    var viewParamsLayout = device.createBindGroupLayout({
-        entries: [
-            {
-                binding: 0,
-                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-                buffer: {
-                    type: "uniform",
-                }
-            },
-            {
-                binding: 1,
-                visibility: GPUShaderStage.VERTEX,
-                buffer: {
-                    type: "uniform",
-                }
-            },
-        ],
-    });
-
-    // The proj_view matrix and eye position
-    var viewParamSize = (16 + 4) * 4;
-    var viewParamBuf = device.createBuffer({
-        size: viewParamSize,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-    var viewParamsBindGroup = device.createBindGroup({
-        layout: viewParamsLayout,
-        entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: viewParamBuf,
-                },
-            },
-            {
-                binding: 1,
-                resource: {
-                    buffer: compressedMC.volumeInfoBuffer,
-                },
-            },
-        ],
-    });
-
-    var renderPipeline = device.createRenderPipeline({
-        layout: device.createPipelineLayout({
-            bindGroupLayouts: [viewParamsLayout],
-        }),
-        vertex: {
-            module: device.createShaderModule({code: mc_isosurface_vert_spv}),
-            entryPoint: "main",
-            buffers: [{
-                arrayStride: 2 * 4,
-                attributes: [
-                    {
-                        format: "uint32x2",
-                        offset: 0,
-                        shaderLocation: 0,
-                    },
-                ]
-            }]
-        },
-        fragment: {
-            module: device.createShaderModule({code: mc_isosurface_frag_spv}),
-            entryPoint: "main",
-            targets: [{format: swapChainFormat}]
-        },
-        depthStencil: {
-            format: "depth24plus-stencil8",
-            depthWriteEnabled: true,
-            depthCompare: "less",
-        },
-    });
-
-    var animationFrame = function() {
+    var animationFrame = function () {
         var resolve = null;
         var promise = new Promise((r) => (resolve = r));
         window.requestAnimationFrame(resolve);
@@ -250,20 +144,22 @@
         uploadArray.set(camera.eyePos(), 16);
         upload.unmap();
 
+        await volumeRC.computeInitialRays(upload);
+
         if (cameraChanged) {
             cameraChanged = false;
             var eyePos = camera.eyePos();
             var eyeDir = camera.eyeDir();
             var upDir = camera.upDir();
             camDisplay.innerHTML = `eye = ${eyePos[0].toFixed(4)} ${eyePos[1].toFixed(
-        4
-      )} ${eyePos[2].toFixed(4)}<br/>
+                4
+            )} ${eyePos[2].toFixed(4)}<br/>
                 dir = ${eyeDir[0].toFixed(4)} ${eyeDir[1].toFixed(
-        4
-      )} ${eyeDir[2].toFixed(4)}<br/>
+                4
+            )} ${eyeDir[2].toFixed(4)}<br/>
                 up = ${upDir[0].toFixed(4)} ${upDir[1].toFixed(
-        4
-      )} ${upDir[2].toFixed(4)}`;
+                4
+            )} ${upDir[2].toFixed(4)}`;
         }
 
         await animationFrame();
@@ -300,11 +196,6 @@
 
         if (isovalueSlider.value != currentIsovalue || requestRecompute) {
             currentIsovalue = parseFloat(isovalueSlider.value);
-
-            var start = performance.now();
-            totalVerts = await compressedMC.computeSurface(currentIsovalue, perfResults);
-            var end = performance.now();
-            console.log(`Computation took ${end - start}ms`);
 
             perfResults.isovalue.push(currentIsovalue);
             perfResults.totalTime.push(end - start);
