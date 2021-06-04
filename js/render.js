@@ -205,7 +205,7 @@
                 isovalue: [],
                 totalTime: [],
             };
-            await compressedMC.lruCache.reset();
+            await volumeRC.lruCache.reset();
             if (requestBenchmark == "random") {
                 currentBenchmark =
                     new RandomIsovalueBenchmark(isovalueSlider, perfResults, dataset.range);
@@ -226,7 +226,7 @@
         }
 
         if (!enableCache.checked) {
-            await compressedMC.lruCache.reset();
+            await volumeRC.lruCache.reset();
         }
 
         if (isovalueSlider.value != currentIsovalue || requestRecompute) {
@@ -262,7 +262,9 @@
         }
 
         if (recomputeSurface) {
-            volumeRC.renderSurface(currentIsovalue, upload);
+            recomputeSurface = false;
+            var perfTracker = {};
+            await volumeRC.renderSurface(currentIsovalue, upload, perfTracker);
         }
 
         // Blit the image rendered by the raycaster onto the screen
