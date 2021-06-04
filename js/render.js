@@ -4,6 +4,9 @@
     var device = await adapter.requestDevice();
 
     var canvas = document.getElementById("webgpu-canvas");
+    var canvas_dims =
+        [parseInt(canvas.getAttribute("width")), parseInt(canvas.getAttribute("height"))];
+    console.log(canvas_dims);
     var context = canvas.getContext("gpupresent");
 
     var dataset = datasets.skull;
@@ -23,7 +26,7 @@
         volumeURL = "/models/" + zfpDataName;
     }
     var compressedData =
-        await fetch(volumeURL).then((res) => res.arrayBuffer().then(function (arr) {
+        await fetch(volumeURL).then((res) => res.arrayBuffer().then(function(arr) {
             return new Uint8Array(arr);
         }));
 
@@ -32,7 +35,7 @@
         return;
     }
 
-    var volumeRC = new VolumeRaycaster(device);
+    var volumeRC = new VolumeRaycaster(device, canvas_dims);
     await volumeRC.setCompressedVolume(
         compressedData, dataset.compressionRate, volumeDims, dataset.scale);
     compressedData = null;
@@ -58,7 +61,7 @@
     var currentIsovalue = isovalueSlider.value;
 
     // Render it!
-    const defaultEye = vec3.set(vec3.create(), 0.0, 0.0, 1.0);
+    const defaultEye = vec3.set(vec3.create(), 0.0, 0.0, 2.0);
     const center = vec3.set(vec3.create(), 0.0, 0.0, 0.0);
     const up = vec3.set(vec3.create(), 0.0, 1.0, 0.0);
     /*
@@ -80,7 +83,7 @@
     var cameraChanged = true;
 
     var controller = new Controller();
-    controller.mousemove = function (prev, cur, evt) {
+    controller.mousemove = function(prev, cur, evt) {
         if (evt.buttons == 1) {
             cameraChanged = true;
             camera.rotate(prev, cur);
@@ -93,14 +96,14 @@
             totalTimeMS = 0;
         }
     };
-    controller.wheel = function (amt) {
+    controller.wheel = function(amt) {
         cameraChanged = true;
         camera.zoom(amt * 0.05);
         numFrames = 0;
         totalTimeMS = 0;
     };
     controller.pinch = controller.wheel;
-    controller.twoFingerDrag = function (drag) {
+    controller.twoFingerDrag = function(drag) {
         cameraChanged = true;
         camera.pan(drag);
         numFrames = 0;
@@ -108,7 +111,7 @@
     };
     controller.registerForCanvas(canvas);
 
-    var animationFrame = function () {
+    var animationFrame = function() {
         var resolve = null;
         var promise = new Promise((r) => (resolve = r));
         window.requestAnimationFrame(resolve);
@@ -122,6 +125,47 @@
         usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
     });
 
+    /* We need a render pass to blit the image that is computed by the volume
+     * raycaster to the screen. This just draws a quad to the screen and loads
+     * the corresponding texel from the render to show on the screen
+     */
+    var swapChainFormat = "bgra8unorm";
+    var swapChain = context.configureSwapChain({
+        device: device,
+        format: swapChainFormat,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+
+    var vertModule = device.createShaderModule({code: display_render_vert_spv});
+    var fragModule = device.createShaderModule({code: display_render_frag_spv});
+
+    var renderBGLayout = device.createBindGroupLayout({
+        entries: [{
+            binding: 0,
+            visibility: GPUShaderStage.FRAGMENT,
+            storageTexture: {access: "read-only", format: "rgba8unorm"}
+        }]
+    });
+
+    var renderPipeline = device.createRenderPipeline({
+        layout: device.createPipelineLayout({bindGroupLayouts: [renderBGLayout]}),
+        vertex: {
+            module: vertModule,
+            entryPoint: "main",
+        },
+        fragment:
+            {module: fragModule, entryPoint: "main", targets: [{format: swapChainFormat}]}
+    });
+
+    var renderPipelineBG = device.createBindGroup({
+        layout: renderBGLayout,
+        entries: [{binding: 0, resource: volumeRC.renderTarget.createView()}]
+    });
+
+    var renderPassDesc = {
+        colorAttachments: [{attachment: undefined, loadValue: [0.3, 0.3, 0.3, 1]}],
+    };
+
     var currentBenchmark = null;
 
     // Other elements to track are added by the different objects
@@ -129,7 +173,7 @@
         isovalue: [],
         totalTime: [],
     };
-    var once = true;
+
     while (true) {
         projView = mat4.mul(projView, proj, camera.camera);
         await upload.mapAsync(GPUMapMode.WRITE);
@@ -138,10 +182,12 @@
         uploadArray.set(camera.eyePos(), 16);
         upload.unmap();
 
-        await volumeRC.computeInitialRays(upload);
-
         if (cameraChanged) {
             cameraChanged = false;
+
+            // Compute the new set of rays for the updated viewpoint
+            await volumeRC.computeInitialRays(upload);
+
             var eyePos = camera.eyePos();
             var eyeDir = camera.eyeDir();
             var upDir = camera.upDir();
@@ -216,6 +262,19 @@
                   }
                   */
         }
+
+        // Blit the image rendered by the raycaster onto the screen
+        var commandEncoder = device.createCommandEncoder();
+
+        renderPassDesc.colorAttachments[0].view = swapChain.getCurrentTexture().createView();
+        var renderPass = commandEncoder.beginRenderPass(renderPassDesc);
+
+        renderPass.setPipeline(renderPipeline);
+        renderPass.setBindGroup(0, renderPipelineBG);
+        // Draw a full screen quad
+        renderPass.draw(6, 1, 0, 0);
+        renderPass.endPass();
+        device.queue.submit([commandEncoder.finish()]);
 
         // Measure render time by waiting for the work done
         await device.queue.onSubmittedWorkDone();

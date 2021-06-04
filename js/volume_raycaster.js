@@ -1,4 +1,4 @@
-var VolumeRaycaster = function (device) {
+var VolumeRaycaster = function(device, canvas_dims) {
     this.device = device;
     this.scanPipeline = new ExclusiveScanPipeline(device);
     this.streamCompact = new StreamCompact(device);
@@ -176,49 +176,19 @@ var VolumeRaycaster = function (device) {
         mappedAtCreation: true,
     });
     new Float32Array(this.dataBuf.getMappedRange()).set([
-        1, 0, 0, 0, 0, 0, 1, 1, 0,
-
-        0, 1, 0, 1, 1, 0, 0, 0, 0,
-
-        1, 0, 1, 1, 0, 0, 1, 1, 1,
-
-        1, 1, 0, 1, 1, 1, 1, 0, 0,
-
-        0, 0, 1, 1, 0, 1, 0, 1, 1,
-
-        1, 1, 1, 0, 1, 1, 1, 0, 1,
-
-        0, 0, 0, 0, 0, 1, 0, 1, 0,
-
-        0, 1, 1, 0, 1, 0, 0, 0, 1,
-
-        1, 1, 0, 0, 1, 0, 1, 1, 1,
-
-        0, 1, 1, 1, 1, 1, 0, 1, 0,
-
-        0, 0, 1, 0, 0, 0, 1, 0, 1,
-
-        1, 0, 0, 1, 0, 1, 0, 0, 0,
+        1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 1,
+        1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1,
+        0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 1,
+        0, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0,
     ]);
     this.dataBuf.unmap();
 
     // Setup render outputs
-    var swapChainFormat = "bgra8unorm";
-    this.swapChain = context.configureSwapChain({
-        device: device,
-        format: swapChainFormat,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
-    var depthFormat = "depth24plus-stencil8";
-    var depthTexture = device.createTexture({
-        size: {
-            width: this.canvas.width,
-            height: this.canvas.height,
-            depth: 1,
-        },
-        format: depthFormat,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    var renderTargetFormat = "rgba8unorm";
+    this.renderTarget = this.device.createTexture({
+        size: [canvas_dims[0], canvas_dims[1], 1],
+        format: renderTargetFormat,
+        usage: GPUTextureUsage.STORAGE | GPUTextureUsage.RENDER_ATTACHMENT
     });
 
     this.initialRaysPipeline = device.createRenderPipeline({
@@ -226,7 +196,7 @@ var VolumeRaycaster = function (device) {
             bindGroupLayouts: [this.computeInitialRaysBGLayout],
         }),
         vertex: {
-            module: device.createShaderModule({ code: compute_initial_rays_vert_spv }),
+            module: device.createShaderModule({code: compute_initial_rays_vert_spv}),
             entryPoint: "main",
             buffers: [
                 {
@@ -242,50 +212,29 @@ var VolumeRaycaster = function (device) {
             ],
         },
         fragment: {
-            module: device.createShaderModule({ code: compute_initial_rays_frag_spv }),
+            module: device.createShaderModule({code: compute_initial_rays_frag_spv}),
             entryPoint: "main",
             targets: [
                 {
-                    format: swapChainFormat,
-                    blend: {
-                        color: {
-                            srcFactor: "one",
-                            dstFactor: "one-minus-src-alpha",
-                        },
-                        alpha: {
-                            srcFactor: "one",
-                            dstFactor: "one-minus-src-alpha",
-                        },
-                    },
-                    writeMask: 0,
+                    format: renderTargetFormat,
+                    // NOTE: allow writes for debugging
+                    //writeMask: 0,
                 },
             ],
         },
         primitive: {
             topology: 'triangle-list',
             cullMode: "front",
-        },
-        depthStencil: {
-            format: depthFormat,
-            depthWriteEnabled: true,
-            depthCompare: "less",
-        },
+        }
     });
 
     this.initialRaysPassDesc = {
         colorAttachments: [
             {
-                view: undefined,
+                view: this.renderTarget.createView(),
                 loadValue: [0.3, 0.3, 0.3, 1],
             },
-        ],
-        depthStencilAttachment: {
-            view: depthTexture.createView(),
-            depthLoadValue: 1.0,
-            depthStoreOp: "store",
-            stencilLoadValue: 0,
-            stencilStoreOp: "store",
-        },
+        ]
     };
 
     this.macroTraverseBGLayout = device.createBindGroupLayout({
@@ -334,124 +283,123 @@ var VolumeRaycaster = function (device) {
             entryPoint: "main",
         },
     });
-
 };
 
 VolumeRaycaster.prototype.setCompressedVolume =
-    async function (volume, compressionRate, volumeDims, volumeScale) {
-        // Upload the volume
-        this.volumeDims = volumeDims;
-        this.paddedDims = [
-            alignTo(volumeDims[0], 4),
-            alignTo(volumeDims[1], 4),
-            alignTo(volumeDims[2], 4),
-        ];
-        this.totalBlocks = (this.paddedDims[0] * this.paddedDims[1] * this.paddedDims[2]) / 64;
-        console.log(`total blocks ${this.totalBlocks}`);
-        const groupThreadCount = 32;
-        this.numWorkGroups = Math.ceil(this.totalBlocks / groupThreadCount);
-        console.log(`num work groups ${this.numWorkGroups}`);
-        console.log(`Cache initial size: ${Math.ceil(this.totalBlocks * 0.05)}`);
+    async function(volume, compressionRate, volumeDims, volumeScale) {
+    // Upload the volume
+    this.volumeDims = volumeDims;
+    this.paddedDims = [
+        alignTo(volumeDims[0], 4),
+        alignTo(volumeDims[1], 4),
+        alignTo(volumeDims[2], 4),
+    ];
+    this.totalBlocks = (this.paddedDims[0] * this.paddedDims[1] * this.paddedDims[2]) / 64;
+    console.log(`total blocks ${this.totalBlocks}`);
+    const groupThreadCount = 32;
+    this.numWorkGroups = Math.ceil(this.totalBlocks / groupThreadCount);
+    console.log(`num work groups ${this.numWorkGroups}`);
+    console.log(`Cache initial size: ${Math.ceil(this.totalBlocks * 0.05)}`);
 
-        this.lruCache = new LRUCache(this.device,
-            this.scanPipeline,
-            this.streamCompact,
-            Math.ceil(this.totalBlocks * 0.05),
-            64 * 4,
-            this.totalBlocks);
+    this.lruCache = new LRUCache(this.device,
+                                 this.scanPipeline,
+                                 this.streamCompact,
+                                 Math.ceil(this.totalBlocks * 0.05),
+                                 64 * 4,
+                                 this.totalBlocks);
 
-        this.volumeInfoBuffer = this.device.createBuffer({
-            size: 16 * 4,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            mappedAtCreation: true,
-        });
-        {
-            var mapping = this.volumeInfoBuffer.getMappedRange();
-            var maxBits = (1 << (2 * 3)) * compressionRate;
-            var buf = new Uint32Array(mapping);
-            buf.set(volumeDims);
-            buf.set(this.paddedDims, 4);
-            buf.set([maxBits], 12);
-            buf.set([this.canvas.width], 14);
+    this.volumeInfoBuffer = this.device.createBuffer({
+        size: 16 * 4,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        mappedAtCreation: true,
+    });
+    {
+        var mapping = this.volumeInfoBuffer.getMappedRange();
+        var maxBits = (1 << (2 * 3)) * compressionRate;
+        var buf = new Uint32Array(mapping);
+        buf.set(volumeDims);
+        buf.set(this.paddedDims, 4);
+        buf.set([maxBits], 12);
+        buf.set([this.canvas.width], 14);
 
-            var buf = new Float32Array(mapping);
-            buf.set(volumeScale, 8);
-        }
-        this.volumeInfoBuffer.unmap();
+        var buf = new Float32Array(mapping);
+        buf.set(volumeScale, 8);
+    }
+    this.volumeInfoBuffer.unmap();
 
-        var compressedBuffer = this.device.createBuffer({
-            size: volume.byteLength,
-            usage: GPUBufferUsage.STORAGE,
-            mappedAtCreation: true,
-        });
-        new Uint8Array(compressedBuffer.getMappedRange()).set(volume);
-        compressedBuffer.unmap();
-        this.compressedBuffer = compressedBuffer;
-        this.compressedDataSize = volume.byteLength;
+    var compressedBuffer = this.device.createBuffer({
+        size: volume.byteLength,
+        usage: GPUBufferUsage.STORAGE,
+        mappedAtCreation: true,
+    });
+    new Uint8Array(compressedBuffer.getMappedRange()).set(volume);
+    compressedBuffer.unmap();
+    this.compressedBuffer = compressedBuffer;
+    this.compressedDataSize = volume.byteLength;
 
-        this.uploadIsovalueBuf = this.device.createBuffer({
-            size: 4,
-            usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
-        });
+    this.uploadIsovalueBuf = this.device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
+    });
 
-        await this.computeBlockRanges();
+    await this.computeBlockRanges();
 
-        this.initialRaysBindGroup = this.device.createBindGroup({
-            layout: this.computeInitialRaysBGLayout,
-            entries: [
-                {
-                    binding: 0,
-                    resource: {
-                        buffer: this.viewParamBuf,
-                    },
+    this.initialRaysBindGroup = this.device.createBindGroup({
+        layout: this.computeInitialRaysBGLayout,
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: this.viewParamBuf,
                 },
-                {
-                    binding: 1,
-                    resource: {
-                        buffer: this.rayInformationBuffer,
-                    },
+            },
+            {
+                binding: 1,
+                resource: {
+                    buffer: this.rayInformationBuffer,
                 },
-                {
-                    binding: 2,
-                    resource: {
-                        buffer: this.volumeInfoBuffer,
-                    },
+            },
+            {
+                binding: 2,
+                resource: {
+                    buffer: this.volumeInfoBuffer,
                 },
-            ],
-        });
+            },
+        ],
+    });
 
-        this.macroTraverseBindGroup = this.device.createBindGroup({
-            layout: this.macroTraverseBGLayout,
-            entries: [
-                {
-                    binding: 0,
-                    resource: {
-                        buffer: this.volumeInfoBuffer,
-                    },
+    this.macroTraverseBindGroup = this.device.createBindGroup({
+        layout: this.macroTraverseBGLayout,
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: this.volumeInfoBuffer,
                 },
-                {
-                    binding: 1,
-                    resource: {
-                        buffer: this.viewParamBuf,
-                    },
+            },
+            {
+                binding: 1,
+                resource: {
+                    buffer: this.viewParamBuf,
                 },
-                {
-                    binding: 2,
-                    resource: {
-                        buffer: this.blockRangesBuffer,
-                    },
+            },
+            {
+                binding: 2,
+                resource: {
+                    buffer: this.blockRangesBuffer,
                 },
-                {
-                    binding: 3,
-                    resource: {
-                        buffer: this.rayInformationBuffer,
-                    },
+            },
+            {
+                binding: 3,
+                resource: {
+                    buffer: this.rayInformationBuffer,
                 },
-            ],
-        });
-    };
+            },
+        ],
+    });
+};
 
-VolumeRaycaster.prototype.computeBlockRanges = async function () {
+VolumeRaycaster.prototype.computeBlockRanges = async function() {
     // Note: this could be done by the server for us, but for this prototype
     // it's a bit easier to just do it here
     // Decompress each block and compute its value range, output to the blockRangesBuffer
@@ -496,11 +444,8 @@ VolumeRaycaster.prototype.computeBlockRanges = async function () {
     this.device.queue.submit([commandEncoder.finish()]);
 };
 
-VolumeRaycaster.prototype.computeInitialRays = async function (viewParamUpload) {
-    this.initialRaysPassDesc.colorAttachments[0].view = this.swapChain
-        .getCurrentTexture()
-        .createView();
-
+VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
+    console.log("Computing initial rays");
     var commandEncoder = this.device.createCommandEncoder();
 
     commandEncoder.copyBufferToBuffer(viewParamUpload, 0, this.viewParamBuf, 0, 20 * 4);
@@ -516,7 +461,7 @@ VolumeRaycaster.prototype.computeInitialRays = async function (viewParamUpload) 
     this.device.queue.submit([commandEncoder.finish()]);
 };
 
-VolumeRaycaster.prototype.macroTraverse = async function (isovalue) {
+VolumeRaycaster.prototype.macroTraverse = async function(isovalue) {
     // Upload the isovalue
     await this.uploadIsovalueBuf.mapAsync(GPUMapMode.WRITE);
     new Float32Array(this.uploadIsovalueBuf.getMappedRange()).set([isovalue]);
@@ -537,83 +482,83 @@ VolumeRaycaster.prototype.macroTraverse = async function (isovalue) {
 };
 
 VolumeRaycaster.prototype.decompressBlocks =
-    async function (nBlocksToDecompress, decompressBlockIDs) {
-        var decompressBlocksBG = this.device.createBindGroup({
-            layout: this.decompressBlocksBGLayout,
+    async function(nBlocksToDecompress, decompressBlockIDs) {
+    var decompressBlocksBG = this.device.createBindGroup({
+        layout: this.decompressBlocksBGLayout,
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: this.compressedBuffer,
+                },
+            },
+            {
+                binding: 1,
+                resource: {
+                    buffer: this.volumeInfoBuffer,
+                },
+            },
+            {
+                binding: 2,
+                resource: {
+                    buffer: this.lruCache.cache,
+                },
+            },
+            {
+                binding: 3,
+                resource: {
+                    buffer: decompressBlockIDs,
+                },
+            },
+            {
+                binding: 4,
+                resource: {
+                    buffer: this.lruCache.cachedItemSlots,
+                },
+            },
+        ],
+    });
+
+    var numChunks = Math.ceil(nBlocksToDecompress / this.maxDispatchSize);
+    var dispatchChunkOffsetsBuf = this.device.createBuffer({
+        size: numChunks * 256,
+        usage: GPUBufferUsage.UNIFORM,
+        mappedAtCreation: true,
+    });
+    var map = new Uint32Array(dispatchChunkOffsetsBuf.getMappedRange());
+    for (var i = 0; i < numChunks; ++i) {
+        map[i * 64] = i * this.maxDispatchSize;
+    }
+    dispatchChunkOffsetsBuf.unmap();
+
+    // We execute these chunks in separate submissions to avoid having them
+    // execute all at once and trigger a TDR if we're decompressing a large amount of data
+    for (var i = 0; i < numChunks; ++i) {
+        var numWorkGroups =
+            Math.min(nBlocksToDecompress - i * this.maxDispatchSize, this.maxDispatchSize);
+        var commandEncoder = this.device.createCommandEncoder();
+        var pass = commandEncoder.beginComputePass();
+        pass.setPipeline(this.decompressBlocksPipeline);
+        pass.setBindGroup(0, decompressBlocksBG);
+        // Have to create bind group here because dynamic offsets are not allowed
+        var decompressBlocksStartOffsetBG = this.device.createBindGroup({
+            layout: this.ub1binding0BGLayout,
             entries: [
                 {
                     binding: 0,
                     resource: {
-                        buffer: this.compressedBuffer,
-                    },
-                },
-                {
-                    binding: 1,
-                    resource: {
-                        buffer: this.volumeInfoBuffer,
-                    },
-                },
-                {
-                    binding: 2,
-                    resource: {
-                        buffer: this.lruCache.cache,
-                    },
-                },
-                {
-                    binding: 3,
-                    resource: {
-                        buffer: decompressBlockIDs,
-                    },
-                },
-                {
-                    binding: 4,
-                    resource: {
-                        buffer: this.lruCache.cachedItemSlots,
+                        buffer: dispatchChunkOffsetsBuf,
+                        size: 4,
+                        offset: i * 256,
                     },
                 },
             ],
         });
-
-        var numChunks = Math.ceil(nBlocksToDecompress / this.maxDispatchSize);
-        var dispatchChunkOffsetsBuf = this.device.createBuffer({
-            size: numChunks * 256,
-            usage: GPUBufferUsage.UNIFORM,
-            mappedAtCreation: true,
-        });
-        var map = new Uint32Array(dispatchChunkOffsetsBuf.getMappedRange());
-        for (var i = 0; i < numChunks; ++i) {
-            map[i * 64] = i * this.maxDispatchSize;
-        }
-        dispatchChunkOffsetsBuf.unmap();
-
-        // We execute these chunks in separate submissions to avoid having them
-        // execute all at once and trigger a TDR if we're decompressing a large amount of data
-        for (var i = 0; i < numChunks; ++i) {
-            var numWorkGroups =
-                Math.min(nBlocksToDecompress - i * this.maxDispatchSize, this.maxDispatchSize);
-            var commandEncoder = this.device.createCommandEncoder();
-            var pass = commandEncoder.beginComputePass();
-            pass.setPipeline(this.decompressBlocksPipeline);
-            pass.setBindGroup(0, decompressBlocksBG);
-            // Have to create bind group here because dynamic offsets are not allowed
-            var decompressBlocksStartOffsetBG = this.device.createBindGroup({
-                layout: this.ub1binding0BGLayout,
-                entries: [
-                    {
-                        binding: 0,
-                        resource: {
-                            buffer: dispatchChunkOffsetsBuf,
-                            size: 4,
-                            offset: i * 256,
-                        },
-                    },
-                ],
-            });
-            pass.setBindGroup(1, decompressBlocksStartOffsetBG);
-            pass.dispatch(numWorkGroups, 1, 1);
-            pass.endPass();
-            this.device.queue.submit([commandEncoder.finish()]);
-        }
-        await this.device.queue.onSubmittedWorkDone();
-        dispatchChunkOffsetsBuf.destroy();
-    };
+        pass.setBindGroup(1, decompressBlocksStartOffsetBG);
+        pass.dispatch(numWorkGroups, 1, 1);
+        pass.endPass();
+        this.device.queue.submit([commandEncoder.finish()]);
+    }
+    await this.device.queue.onSubmittedWorkDone();
+    dispatchChunkOffsetsBuf.destroy();
+};

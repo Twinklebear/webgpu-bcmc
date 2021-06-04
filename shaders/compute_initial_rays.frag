@@ -51,7 +51,7 @@ void main() {
 	t_hit.x = max(t_hit.x, 0.0);
     
     uint index = uint(gl_FragCoord.x) + image_width * uint(gl_FragCoord.y);
-	if (t_hit.x > t_hit.y) {
+	if (t_hit.x < t_hit.y) {
         rays[index].block_id = UINT_MAX;
         rays[index].ray_dir = ray_dir;
         rays[index].t = t_hit.x;

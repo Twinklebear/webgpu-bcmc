@@ -28,6 +28,8 @@ shaders = [
     "radix_sort_chunk.comp",
     "reverse_buffer.comp",
     "merge_sorted_chunks.comp",
+    "display_render.vert",
+    "display_render.frag"
 ]
 
 try:
