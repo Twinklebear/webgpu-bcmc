@@ -1,0 +1,35 @@
+#version 450 core
+
+#include "util.glsl"
+
+layout(set = 0, binding = 0, std430) buffer BlockInformation
+{
+    BlockInfo blocks[];
+};
+
+layout(set = 0, binding = 1, std430) buffer BlockIDs
+{
+    uint block_ids[];
+};
+
+layout(set = 0, binding = 2, std430) buffer BlockRayOffset
+{
+    uint block_ray_offsets[];
+};
+
+layout(set = 0, binding = 3, std430) buffer BlockNumRays
+{
+    uint block_num_rays[];
+};
+
+void main(void)
+{
+    // Combine the buffers to fit in fewer storage buffers until limits are removed
+    // Note that 8 will be supported soon in Chromium so we could remove this
+    // This data is compacted down as it's run on the compacted block ids
+    const uint id = block_ids[gl_GlobalInvocationID.x];
+    blocks[gl_GlobalInvocationID.x].id = id;
+    blocks[gl_GlobalInvocationID.x].ray_offset = block_ray_offsets[id];
+    blocks[gl_GlobalInvocationID.x].num_rays = block_num_rays[id];
+}
+

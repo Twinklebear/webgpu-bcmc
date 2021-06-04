@@ -1,0 +1,135 @@
+#version 450 core
+
+#include "util.glsl"
+#include "load_block.comp"
+
+layout(local_size_x = BLOCK_NUM_VOXELS, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 1, binding = 0, std140) uniform ViewParams
+{
+    mat4 proj_view;
+    vec4 eye_pos;
+};
+
+layout(set = 1, binding = 1, std430) buffer RayInformation
+{
+    RayInfo rays[];
+};
+
+layout(set = 1, binding = 2, std430) buffer RayIDs
+{
+    uint ray_ids[];
+};
+
+layout(set = 1, binding = 3, std430) buffer BlockInformation
+{
+    BlockInfo blocks[];
+};
+
+uniform layout(set = 1, binding = 4, rgba8) writeonly image2D render_target;
+
+vec4 block_id_to_color(const uvec3 block_id) {
+    const vec3 n_blocks = padded_dims.xyz / uvec3(4);
+    return vec4(vec3(block_id) / n_blocks, 1.0);
+}
+
+shared BlockInfo block_info;
+
+void main(void)
+{
+    if (gl_LocalInvocationID.x == 0) {
+        block_info = blocks[gl_WorkGroupID.x];
+    }
+    barrier();
+    if (block_info.num_rays == 0) { 
+        return;
+    }
+    const uvec3 block_dims = load_block(block_info.id);
+    const uvec3 block_pos = block_id_to_pos(block_info.id);
+
+    vec3 volume_translation = vec3(0) - volume_scale.xyz * 0.5;
+    vec3 transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale.xyz;
+    vec3 vol_eye = transformed_eye * volume_dims.xyz - vec3(0.5);
+    // Translate into the block grid and clamp to bounds. The block grid's
+    // scale is the same as the volume, so we don't need a scale factor here
+
+    // Process all the rays for this block in parallel, each thread takes one ray
+    // so we can do 64 rays at a time. For cases where a block projects to many more
+    // than 64 pixels it'd be good to break up the rays to be processed by multiple
+    // work groups to avoid serializing rendering 
+    // TODO: Need to dispatch for each chunk of BLOCK_NUM_VOXELS rays that the block covers
+    // so that we don't run into varying control flow issues w/ syncs and to avoid serializing
+    // rendering for zoomed in views of smaller volumes
+    // Threads without a ray "write" out of bounds, which is defined to do nothing
+    ivec2 pixel_coords = ivec2(-1);
+    vec4 color = vec4(0);
+    color.a = 1;
+    uint ray_id = gl_LocalInvocationID.x;
+
+    if (ray_id < block_info.num_rays) {
+        const uint ray_index = ray_ids[block_info.ray_offset + ray_id];
+        pixel_coords = ivec2(ray_id_to_pos(ray_index));
+
+        // Transform the ray into the dual grid space
+        vec3 grid_ray_dir = normalize(rays[ray_index].ray_dir * volume_dims.xyz);
+
+        // TODO: This should recompute the ray iteration params in the block grid space.
+        float t_current = rays[ray_index].t;
+        vec3 p = (vol_eye + t_current * grid_ray_dir);
+        p = clamp(p, vec3(0), vec3(volume_dims - 2));
+
+        const vec3 inv_grid_ray_dir = 1.0 / grid_ray_dir;
+        const vec3 start_cell = floor(p);
+        const vec3 t_max_neg = (start_cell - vol_eye) * inv_grid_ray_dir;
+        const vec3 t_max_pos = (start_cell + vec3(1) - vol_eye) * inv_grid_ray_dir;
+        const bvec3 is_neg_dir = lessThan(grid_ray_dir, vec3(0));
+        // Pick between positive/negative t_max based on the ray sign
+        vec3 t_max = mix(t_max_pos, t_max_neg, is_neg_dir);
+        const ivec3 grid_step = ivec3(sign(grid_ray_dir));
+        // Note: each voxel is a 1^3 box on the grid
+        const vec3 t_delta = abs(inv_grid_ray_dir);
+
+        // Traverse the ray through the dual grid 
+        float t_prev = rays[ray_index].t;
+        float vertex_values[8];
+        vec2 cell_range;
+        compute_vertex_values(ivec3(0), block_dims, vertex_values, cell_range);
+        color.xyz = vec3(((cell_range.x + cell_range.y) / 2.0) / 255.0);
+
+        /*
+        while (!outside_dual_grid(p - block_pos, vec3(block_dims))) {
+            const ivec3 v000 = ivec3(p - block_pos);
+            compute_vertex_values(v000, block_dims, vertex_values, cell_range);
+
+            const float t_next = min(t_max.x, min(t_max.y, t_max.z));
+            const bool skip_cell = isovalue < cell_range.x || isovalue > cell_range.y;
+
+            // TODO: intersect isosurface, right now for initial testing just mark the cell
+            if (!skip_cell) {
+                color = vec4(1);
+                break;
+            }
+            color.xyz = vec3(((cell_range.x + cell_range.y) / 2.0) / 128.0);
+            //color.xyz = vec3(vertex_values[0] / 128.0);
+            break;
+
+            t_prev = t_next;
+            // Advance in the grid
+            if (t_next == t_max.x) {
+                p.x += grid_step.x;
+                t_max.x += t_delta.x;
+            } else if (t_next == t_max.y) {
+                p.y += grid_step.y;
+                t_max.y += t_delta.y;
+            } else {
+                p.z += grid_step.z;
+                t_max.z += t_delta.z;
+            }
+        }
+        */
+        // TODO: Update the ray t value. I think it is easiest if we keep t_next stored
+        // for the macrocell grid
+    }
+    imageStore(render_target, pixel_coords, color);
+}
+

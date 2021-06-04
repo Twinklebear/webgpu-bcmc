@@ -16,5 +16,20 @@ struct RayInfo {
     //vec2 pad;
 };
 
+struct BlockInfo {
+    uint id;
+    uint ray_offset;
+    uint num_rays;
+};
+
+bool outside_grid(const vec3 p, const vec3 grid_dims) {
+    return any(lessThan(p, vec3(0))) || any(greaterThanEqual(p, grid_dims));
+}
+
+bool outside_dual_grid(const vec3 p, const vec3 grid_dims) {
+    return any(lessThan(p, vec3(0))) || any(greaterThanEqual(p, grid_dims - vec3(1)));
+}
+
+
 #endif
 

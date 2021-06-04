@@ -113,12 +113,12 @@ ExclusiveScanPipeline.prototype.prepareInput = function(cpuArray) {
     return new ExclusiveScanner(this, inputBuf, alignedSize, cpuArray.length);
 };
 
-ExclusiveScanPipeline.prototype.prepareGPUInput = function(gpuBuffer, alignedSize, dataSize) {
+ExclusiveScanPipeline.prototype.prepareGPUInput = function(gpuBuffer, alignedSize) {
     if (this.getAlignedSize(alignedSize) != alignedSize) {
         alert("Error: GPU input must be aligned to getAlignedSize");
     }
 
-    return new ExclusiveScanner(this, gpuBuffer, alignedSize, dataSize);
+    return new ExclusiveScanner(this, gpuBuffer, alignedSize);
 };
 
 var ExclusiveScanner = function(scanPipeline, gpuBuffer, alignedSize) {

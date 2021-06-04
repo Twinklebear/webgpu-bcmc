@@ -1,0 +1,234 @@
+#define BLOCK_NUM_VOXELS 64
+
+// For ghost voxels, we only need those in the positive dir,
+// since verts for triangles ''behind'' us are the job of the neighboring
+// block to that side. So our max size is 5^3 elements if we have a ghost
+// layer on each side, which is rounded up to 128
+shared float volume_block[128];
+
+layout(set = 0, binding = 0, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+    uint max_bits;
+    float isovalue;
+    uint image_width;
+};
+
+layout(set = 0, binding = 1, std430) buffer Decompressed
+{
+    float decompressed[];
+};
+
+layout(set = 0, binding = 2, std430) buffer BlockLocations
+{
+    // Cached item slots in the cache
+    // this is lruCache.cachedItemSlots
+    int block_locations[];
+};
+
+const ivec3[8] index_to_vertex = {
+	ivec3(0, 0, 0),
+	ivec3(1, 0, 0),
+	ivec3(1, 1, 0),
+	ivec3(0, 1, 0),
+	ivec3(0, 0, 1),
+	ivec3(1, 0, 1),
+	ivec3(1, 1, 1),
+	ivec3(0, 1, 1)
+};
+
+uvec2 ray_id_to_pos(uint id)
+{
+    return uvec2(id % image_width, id / image_width);
+}
+
+uvec3 block_id_to_pos(uint id)
+{
+    uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+    return uvec3(id % n_blocks.x,
+            (id / n_blocks.x) % n_blocks.y,
+            id / (n_blocks.x * n_blocks.y));
+}
+
+uint compute_block_id(uvec3 block_pos)
+{
+    uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+    return block_pos.x + n_blocks.x * (block_pos.y + n_blocks.y * block_pos.z);
+}
+
+uvec3 voxel_id_to_voxel(uint id)
+{
+    return uvec3(id % 4, (id / 4) % 4, id / 16);
+}
+
+uint compute_voxel_id(uvec3 voxel_pos, uvec3 block_dims)
+{
+    return voxel_pos.x + block_dims.x * (voxel_pos.y + block_dims.y * voxel_pos.z);
+}
+
+void compute_vertex_values(uvec3 voxel_pos, uvec3 block_dims, out float values[8], out vec2 value_range)
+{
+    value_range.x = 1e20f;
+    value_range.y = -1e20f;
+    for (int i = 0; i < 8; ++i) {
+        const uvec3 v = index_to_vertex[i];
+        uint voxel = ((voxel_pos.z + v.z) * block_dims.y + voxel_pos.y + v.y) * block_dims.x
+            + voxel_pos.x + v.x;
+        values[i] = volume_block[voxel];
+        value_range.x = min(value_range.x, values[i]);
+        value_range.y = max(value_range.y, values[i]);
+    }
+}
+
+// Compute the dimensions of the block + its ghost voxels
+uvec3 compute_block_dims_with_ghost(const uvec3 block_pos)
+{
+    const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+    const uvec3[3] face_neighbors = { uvec3(1, 0, 0), uvec3(0, 1, 0), uvec3(0, 0, 1) };
+    const uvec3[3] edge_neighbors = { uvec3(1, 1, 0), uvec3(1, 0, 1), uvec3(0, 1, 1) };
+
+    uvec3 block_dims = uvec3(4);
+    if (block_pos.x + 1 < n_blocks.x) {
+        block_dims.x = 5;
+    }
+    if (block_pos.y + 1 < n_blocks.y) {
+        block_dims.y = 5;
+    }
+    if (block_pos.z + 1 < n_blocks.z) {
+        block_dims.z = 5;
+    }
+
+    if (block_dims == uvec3(5)) {
+        const uint corner = compute_block_id(block_pos + uvec3(1));
+        if (block_locations[corner] == -1) {
+            block_dims = uvec3(4);
+        }
+    }
+    if (block_dims.xy == uvec2(5)) {
+        const uint edge = compute_block_id(block_pos + edge_neighbors[0]);
+        if (block_locations[edge] == -1) {
+            block_dims.xy = uvec2(4);
+        }
+    }
+    if (block_dims.xz == uvec2(5)) {
+        const uint edge = compute_block_id(block_pos + edge_neighbors[1]);
+        if (block_locations[edge] == -1) {
+            block_dims.xz = uvec2(4);
+        }
+    }
+    if (block_dims.yz == uvec2(5)) {
+        const uint edge = compute_block_id(block_pos + edge_neighbors[2]);
+        if (block_locations[edge] == -1) {
+            block_dims.yz = uvec2(4);
+        }
+    }
+    if (block_dims.x == 5) {
+        const uint face = compute_block_id(block_pos + face_neighbors[0]);
+        if (block_locations[face] == -1) {
+            block_dims.x = 4;
+        }
+    }
+    if (block_dims.y == 5) {
+        const uint face = compute_block_id(block_pos + face_neighbors[1]);
+        if (block_locations[face] == -1) {
+            block_dims.y = 4;
+        }
+    }
+    if (block_dims.z == 5) {
+        const uint face = compute_block_id(block_pos + face_neighbors[2]);
+        if (block_locations[face] == -1) {
+            block_dims.z = 4;
+        }
+    }
+    return block_dims;
+}
+
+void load_voxel(const uint neighbor_id,
+        const uvec3 ghost_voxel_pos,
+        const uvec3 neighbor_voxel_pos,
+        const uvec3 block_dims)
+{
+    const uint neighbor_location = block_locations[neighbor_id];
+    const uint ghost_voxel_id = compute_voxel_id(ghost_voxel_pos, block_dims);
+    const uint neighbor_voxel_id = compute_voxel_id(neighbor_voxel_pos, uvec3(4));
+    volume_block[ghost_voxel_id] = decompressed[neighbor_location * BLOCK_NUM_VOXELS + neighbor_voxel_id];
+}
+
+// Load the volume block and any ghost voxels needed from neighbors to
+// compute the dual grid vertex values. Returns the block volume dimensions
+uvec3 load_block(const uint block_id)
+{
+    volume_block[gl_LocalInvocationID.x * 2] = 0;
+    volume_block[gl_LocalInvocationID.x * 2 + 1] = 0;
+    barrier();
+
+    const uvec3 block_pos = block_id_to_pos(block_id);
+    const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+
+    const uvec3[3] face_neighbors = { uvec3(1, 0, 0), uvec3(0, 1, 0), uvec3(0, 0, 1) };
+    const uvec3[3] edge_neighbors = { uvec3(1, 1, 0), uvec3(1, 0, 1), uvec3(0, 1, 1) };
+
+    const uvec3 block_dims = compute_block_dims_with_ghost(block_pos);
+
+    const uvec3 voxel_pos = voxel_id_to_voxel(gl_LocalInvocationID.x);
+    load_voxel(block_id, voxel_pos, voxel_pos, block_dims);
+
+    // Load the faces of our face neighbors
+    for (uint i = 0; i < 3; ++i) {
+        if (block_dims[i] == 5 && voxel_pos[i] == 3) {
+            const uvec3 ghost_voxel_pos = voxel_pos + face_neighbors[i];
+            uvec3 neighbor_voxel_pos = ghost_voxel_pos;
+            if (face_neighbors[i].x == 1) {
+                neighbor_voxel_pos.x = 0;
+            } else if (face_neighbors[i].y == 1) {
+                neighbor_voxel_pos.y = 0;
+            } else {
+                neighbor_voxel_pos.z = 0;
+            }
+
+            const uvec3 neighbor_block_pos = block_pos + face_neighbors[i];
+            const uint neighbor_id = compute_block_id(neighbor_block_pos);
+
+            load_voxel(neighbor_id, ghost_voxel_pos, neighbor_voxel_pos, block_dims);
+        }
+    }
+
+    // Load the scanlines of our edge neighbors
+    for (uint i = 0; i < 3; ++i) {
+        uvec3 b = block_dims * edge_neighbors[i];
+        uvec3 p = voxel_pos * edge_neighbors[i];
+        if (b.x + b.y + b.z == 10 && p.x + p.y + p.z == 6) {
+            const uvec3 ghost_voxel_pos = voxel_pos + edge_neighbors[i];
+            uvec3 neighbor_voxel_pos = ghost_voxel_pos;
+            if (edge_neighbors[i].x == 1) {
+                neighbor_voxel_pos.x = 0;
+            }
+            if (edge_neighbors[i].y == 1) {
+                neighbor_voxel_pos.y = 0;
+            }
+            if (edge_neighbors[i].z == 1) {
+                neighbor_voxel_pos.z = 0;
+            }
+
+            const uvec3 neighbor_block_pos = block_pos + edge_neighbors[i];
+            const uint neighbor_id = compute_block_id(neighbor_block_pos);
+
+            load_voxel(neighbor_id, ghost_voxel_pos, neighbor_voxel_pos, block_dims);
+        }
+    }
+
+    // Load the corner voxel of our corner neighbor
+    if (block_dims == uvec3(5) && voxel_pos == uvec3(3)) {
+        const uvec3 ghost_voxel_pos = voxel_pos + uvec3(1);
+
+        const uvec3 neighbor_block_pos = block_pos + uvec3(1);
+        const uint neighbor_id = compute_block_id(neighbor_block_pos);
+
+        load_voxel(neighbor_id, ghost_voxel_pos, uvec3(0), block_dims);
+    }
+
+    barrier();
+    return block_dims;
+}

@@ -1,0 +1,41 @@
+#version 450 core
+
+#include "util.glsl"
+
+layout(set = 0, binding = 0, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+    uint max_bits;
+    float isovalue;
+    uint image_width;
+};
+
+layout(set = 0, binding = 1, std430) buffer RayInformation
+{
+    RayInfo rays[];
+};
+
+layout(set = 0, binding = 2, std430) buffer RayBlockID
+{
+    uint block_id[];
+};
+
+layout(set = 0, binding = 3, std430) buffer RayActive
+{
+    uint ray_active[];
+};
+
+void main() {
+    // Write out the ray index and its block id so that we can sort
+    // the ray IDs using the block ID as the key. Also save out which rays
+    // are active so we can do a compaction on the active ray IDs so that
+    // we don't have to sort the whole framebuffer each time
+    // The ray IDs are built during the stream compact IDs, so we don't need to
+    // write them out here
+    uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
+    block_id[ray_index] = rays[ray_index].block_id;
+    ray_active[ray_index] = rays[ray_index].block_id != UINT_MAX ? 1 : 0;
+}
+

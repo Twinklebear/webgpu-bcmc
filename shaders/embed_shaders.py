@@ -14,6 +14,7 @@ shaders = [
     "block_prefix_sum.comp",
     "add_block_sums.comp",
     "stream_compact.comp",
+    "stream_compact_data.comp",
     "compute_initial_rays.vert",
     "compute_initial_rays.frag",
     "zfp_compute_block_range.comp",
@@ -34,7 +35,10 @@ shaders = [
     "mark_block_active.comp",
     "reset_block_active.comp",
     "reset_block_num_rays.comp",
-    "debug_view_rays_per_block.comp"
+    "debug_view_rays_per_block.comp",
+    "write_ray_and_block_id.comp",
+    "combine_block_information.comp",
+    "raytrace_active_block.comp"
 ]
 
 try:

@@ -143,7 +143,8 @@ RadixSorter.prototype.getAlignedSize = function(size) {
     return chunkCount * SortChunkSize;
 };
 
-// Input buffers are assumed to be of size "alignedSize"
+// Input buffers are assumed to be of size "alignedSize" and must have
+// storage, copy_dst, copy_src usage
 RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
     // Has to be a pow2 * chunkSize elements, since we do log_2 merge steps up
     var chunkCount = nextPow2(Math.ceil(size / SortChunkSize));
