@@ -1,0 +1,28 @@
+#version 450 core
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+    uint max_bits;
+    float isovalue;
+};
+
+layout(set = 0, binding = 1, std430) buffer BlockNumRays
+{
+    uint block_num_rays[];
+};
+
+void main(void)
+{
+    const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+    const uint block_id = gl_GlobalInvocationID.x + n_blocks.x
+        * (gl_GlobalInvocationID.y + n_blocks.y * gl_GlobalInvocationID.z);
+
+    block_num_rays[block_id] = 0;
+}
+
+

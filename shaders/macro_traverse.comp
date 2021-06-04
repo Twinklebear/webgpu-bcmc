@@ -12,7 +12,8 @@ layout(set = 0, binding = 0, std140) uniform VolumeParams
     uint image_width;
 };
 
-layout(set = 0, binding = 1, std140) uniform ViewParams {
+layout(set = 0, binding = 1, std140) uniform ViewParams
+{
     mat4 proj_view;
     vec4 eye_pos;
 };
@@ -22,7 +23,8 @@ layout(set = 0, binding = 2, std430) buffer BlockRanges
     vec2 block_ranges[];
 };
 
-layout(set = 0, binding = 3, std430) buffer RayInformation {
+layout(set = 0, binding = 3, std430) buffer RayInformation
+{
     RayInfo rays[];
 };
 
@@ -30,12 +32,6 @@ uniform layout(set = 0, binding = 4, rgba8) writeonly image2D render_target;
 
 bool outside_dual_grid(const vec3 p, const vec3 grid_dims) {
     return any(lessThan(p, vec3(0))) || any(greaterThanEqual(p, grid_dims));
-}
-
-vec3 hsl2rgb(in vec3 c) {
-    vec3 rgb = clamp(abs(mod(c.x*6.0+vec3(0.0,4.0,2.0),6.0)-3.0)-1.0, 0.0, 1.0);
-
-    return c.z + c.y * (rgb-0.5)*(1.0-abs(2.0*c.z-1.0));
 }
 
 vec4 block_id_to_color(const uvec3 block_id) {

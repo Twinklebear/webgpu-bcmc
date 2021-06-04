@@ -1,0 +1,45 @@
+#version 450 core
+
+#include "util.glsl"
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+    uint max_bits;
+    float isovalue;
+    uint image_width;
+};
+
+layout(set = 0, binding = 1, std430) buffer BlockNumRays
+{
+    uint block_num_rays[];
+};
+
+layout(set = 0, binding = 2, std430) buffer RayInformation
+{
+    RayInfo rays[];
+};
+
+uniform layout(set = 0, binding = 3, rgba8) writeonly image2D render_target;
+
+void main(void)
+{
+    uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
+    if (rays[ray_index].t == FLT_MAX) {
+        return;
+    }
+
+    const uint block_id = rays[ray_index].block_id;
+    vec4 color;
+    // We don't really bother to find the max, though we could do it in the
+    // shader since this is just for debugging.
+    color.rgb = vec3(block_num_rays[block_id] / 256.0);
+    color.a = 1.0;
+    imageStore(render_target, ivec2(gl_GlobalInvocationID.xy), color);
+}
+
+

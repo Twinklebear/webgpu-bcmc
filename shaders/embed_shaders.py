@@ -30,7 +30,11 @@ shaders = [
     "merge_sorted_chunks.comp",
     "display_render.vert",
     "display_render.frag",
-    "reset_rays.comp"
+    "reset_rays.comp",
+    "mark_block_active.comp",
+    "reset_block_active.comp",
+    "reset_block_num_rays.comp",
+    "debug_view_rays_per_block.comp"
 ]
 
 try:

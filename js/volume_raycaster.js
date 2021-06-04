@@ -3,8 +3,6 @@ var VolumeRaycaster = function(device, canvas) {
     this.scanPipeline = new ExclusiveScanPipeline(device);
     this.streamCompact = new StreamCompact(device);
     this.numActiveBlocks = 0;
-    this.numVertices = 0;
-    this.numBlocksWithVertices = 0;
 
     this.canvas = canvas;
     console.log(`canvas size ${canvas.width}x${canvas.height}`);
@@ -14,8 +12,6 @@ var VolumeRaycaster = function(device, canvas) {
     this.maxDispatchSize = 512000;
 
     this.numActiveBlocksStorage = 0;
-    this.numBlocksWithVerticesStorage = 0;
-    this.numVerticesStorage = 0;
 
     var triTableBuf = device.createBuffer({
         size: triTable.byteLength,
@@ -310,6 +306,69 @@ var VolumeRaycaster = function(device, canvas) {
             entryPoint: "main",
         },
     });
+
+    this.resetBlockActiveBGLayout = device.createBindGroupLayout({
+        entries: [
+            {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
+            {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}}
+        ]
+    });
+    this.resetBlockActivePipeline = device.createComputePipeline({
+        layout:
+            device.createPipelineLayout({bindGroupLayouts: [this.resetBlockActiveBGLayout]}),
+        compute: {
+            module: device.createShaderModule({code: reset_block_active_comp_spv}),
+            entryPoint: "main"
+        }
+    });
+
+    // These could even use the same shader and pipeline, just swap out the bind group
+    this.resetBlockNumRaysPipeline = device.createComputePipeline({
+        layout:
+            device.createPipelineLayout({bindGroupLayouts: [this.resetBlockActiveBGLayout]}),
+        compute: {
+            module: device.createShaderModule({code: reset_block_num_rays_comp_spv}),
+            entryPoint: "main"
+        }
+    });
+
+    this.markBlockActiveBGLayout = device.createBindGroupLayout({
+        entries: [
+            {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
+            {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+            {binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+            {binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}}
+        ]
+    });
+    this.markBlockActivePipeline = device.createComputePipeline({
+        layout:
+            device.createPipelineLayout({bindGroupLayouts: [this.markBlockActiveBGLayout]}),
+        compute: {
+            module: device.createShaderModule({code: mark_block_active_comp_spv}),
+            entryPoint: "main"
+        }
+    });
+
+    this.debugViewBlockRayCountsBGLayout = device.createBindGroupLayout({
+        entries: [
+            {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
+            {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+            {binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+            {
+                binding: 3,
+                visibility: GPUShaderStage.COMPUTE,
+                storageTexture: {access: "write-only", format: renderTargetFormat}
+            }
+        ]
+    });
+    this.debugViewBlockRayCountsPipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout(
+            {bindGroupLayouts: [this.debugViewBlockRayCountsBGLayout]}),
+        compute: {
+            module: device.createShaderModule({code: debug_view_rays_per_block_comp_spv}),
+            entryPoint: "main"
+        }
+    });
 };
 
 VolumeRaycaster.prototype.setCompressedVolume =
@@ -321,7 +380,10 @@ VolumeRaycaster.prototype.setCompressedVolume =
         alignTo(volumeDims[1], 4),
         alignTo(volumeDims[2], 4),
     ];
+    this.blockGridDims =
+        [this.paddedDims[0] / 4, this.paddedDims[1] / 4, this.paddedDims[2] / 4];
     this.totalBlocks = (this.paddedDims[0] * this.paddedDims[1] * this.paddedDims[2]) / 64;
+
     console.log(`total blocks ${this.totalBlocks}`);
     const groupThreadCount = 32;
     this.numWorkGroups = Math.ceil(this.totalBlocks / groupThreadCount);
@@ -370,6 +432,12 @@ VolumeRaycaster.prototype.setCompressedVolume =
     });
 
     await this.computeBlockRanges();
+
+    this.blockActiveBuffer =
+        this.device.createBuffer({size: 4 * this.totalBlocks, usage: GPUBufferUsage.STORAGE});
+
+    this.blockNumRaysBuffer =
+        this.device.createBuffer({size: 4 * this.totalBlocks, usage: GPUBufferUsage.STORAGE});
 
     this.resetRaysBG = this.device.createBindGroup({
         layout: this.resetRaysBGLayout,
@@ -433,6 +501,31 @@ VolumeRaycaster.prototype.setCompressedVolume =
             {binding: 4, resource: this.renderTarget.createView()}
         ],
     });
+
+    this.resetBlockActiveBG = this.device.createBindGroup({
+        layout: this.resetBlockActiveBGLayout,
+        entries: [
+            {binding: 0, resource: {buffer: this.volumeInfoBuffer}},
+            {binding: 1, resource: {buffer: this.blockActiveBuffer}}
+        ]
+    });
+    this.resetBlockNumRaysBG = this.device.createBindGroup({
+        layout: this.resetBlockActiveBGLayout,
+        entries: [
+            {binding: 0, resource: {buffer: this.volumeInfoBuffer}},
+            {binding: 1, resource: {buffer: this.blockNumRaysBuffer}}
+        ]
+    });
+
+    this.markBlockActiveBG = this.device.createBindGroup({
+        layout: this.markBlockActiveBGLayout,
+        entries: [
+            {binding: 0, resource: {buffer: this.volumeInfoBuffer}},
+            {binding: 1, resource: {buffer: this.blockActiveBuffer}},
+            {binding: 2, resource: {buffer: this.blockNumRaysBuffer}},
+            {binding: 3, resource: {buffer: this.rayInformationBuffer}}
+        ]
+    });
 };
 
 VolumeRaycaster.prototype.computeBlockRanges = async function() {
@@ -486,11 +579,31 @@ VolumeRaycaster.prototype.renderSurface = async function(isovalue, viewParamUplo
     new Float32Array(this.uploadIsovalueBuf.getMappedRange()).set([isovalue]);
     this.uploadIsovalueBuf.unmap();
 
+    // Reset active blocks for the new viewpoint/isovalue to allow eviction of old blocks
+    {
+        var commandEncoder = this.device.createCommandEncoder();
+        var pass = commandEncoder.beginComputePass();
+        pass.setPipeline(this.resetBlockActivePipeline);
+        pass.setBindGroup(0, this.resetBlockActiveBG);
+        pass.dispatch(this.blockGridDims[0], this.blockGridDims[1], this.blockGridDims[2]);
+        pass.endPass();
+        this.device.queue.submit([commandEncoder.finish()]);
+    }
+
     await this.computeInitialRays(viewParamUpload);
 
     await this.macroTraverse();
+
+    await this.markActiveBlocks();
 };
 
+// Reset the rays and compute the initial set of rays that intersect the volume
+// Rays that miss the volume will have:
+// dir = vec3(0)
+// block_id = UINT_MAX
+// t = FLT_MAX
+//
+// Rays that hit the volume will have valid directions and t values
 VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
     var commandEncoder = this.device.createCommandEncoder();
 
@@ -513,6 +626,8 @@ VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
     this.device.queue.submit([commandEncoder.finish()]);
 };
 
+// Step the active rays forward in the macrocell grid, updating block_id and t.
+// Rays that exit the volume will have block_id = UINT_MAX and t = FLT_MAX
 VolumeRaycaster.prototype.macroTraverse = async function() {
     // TODO: Would it be worth doing a scan and compact to find just the IDs of the currently
     // active rays? then only advancing them? We'll do that anyways so it would tell us when
@@ -523,12 +638,47 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
 
     var pass = commandEncoder.beginComputePass();
 
-    // Decompress each block and compute its range
     pass.setPipeline(this.macroTraversePipeline);
     pass.setBindGroup(0, this.macroTraverseBindGroup);
     pass.dispatch(this.canvas.width, this.canvas.height, 1);
 
     pass.endPass();
+    this.device.queue.submit([commandEncoder.finish()]);
+};
+
+// Mark the active blocks for the current viewpoint/isovalue and count the # of rays
+// that we need to process for each block
+VolumeRaycaster.prototype.markActiveBlocks = async function() {
+    var commandEncoder = this.device.createCommandEncoder();
+    var pass = commandEncoder.beginComputePass();
+
+    // Reset the # of rays for each block
+    pass.setPipeline(this.resetBlockNumRaysPipeline);
+    pass.setBindGroup(0, this.resetBlockNumRaysBG);
+    pass.dispatch(this.blockGridDims[0], this.blockGridDims[1], this.blockGridDims[2]);
+
+    // Compute which blocks are active and how many rays each has
+    pass.setPipeline(this.markBlockActivePipeline);
+    pass.setBindGroup(0, this.markBlockActiveBG);
+    pass.dispatch(this.canvas.width, this.canvas.height, 1);
+
+    // Debugging: view # rays per block
+    if (true) {
+        var debugViewBlockRayCountsBG = this.device.createBindGroup({
+            layout: this.debugViewBlockRayCountsBGLayout,
+            entries: [
+                {binding: 0, resource: {buffer: this.volumeInfoBuffer}},
+                {binding: 1, resource: {buffer: this.blockNumRaysBuffer}},
+                {binding: 2, resource: {buffer: this.rayInformationBuffer}},
+                {binding: 3, resource: this.renderTarget.createView()}
+            ]
+        });
+        pass.setPipeline(this.debugViewBlockRayCountsPipeline);
+        pass.setBindGroup(0, debugViewBlockRayCountsBG);
+        pass.dispatch(this.canvas.width, this.canvas.height, 1);
+    }
+    pass.endPass();
+
     this.device.queue.submit([commandEncoder.finish()]);
 };
 
