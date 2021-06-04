@@ -1088,6 +1088,9 @@ VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks
     // TODO: Because of some control flow/sync limitations and potential for serializing
     // rendering when zoomed in on low res volumes, this should change to dispatch one
     // work group per chunk of 64 rays for each block. This will parallelize rendering well too
+    // TODO: this can be dispatched using dispatch indirect, build the commands on the GPU
+    // so we can avoid reading back the data. Open Q: how to get the dispatch ID so we know
+    // which block we're processing?
     pass.setPipeline(this.raytraceBlocksPipeline);
     pass.setBindGroup(0, rtBlocksPipelineBG0);
     pass.setBindGroup(1, this.rtBlocksPipelineBG1);
