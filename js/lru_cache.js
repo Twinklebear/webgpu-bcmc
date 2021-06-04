@@ -389,6 +389,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     perfTracker.lruNumNewItems.push(numNewItems);
 
     if (numNewItems == 0) {
+        console.log("No new items");
         console.log("------");
         // Push 0's for unexecuted steps
         perfTracker.lruCompactNewItems.push(0);
@@ -590,8 +591,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     pass.dispatch(this.cacheSize, 1, 1);
     pass.endPass();
     this.device.queue.submit([commandEncoder.finish()]);
-    // I don't think we need an await here since it's all on the same queue
-    // await this.device.queue.onSubmittedWorkDone();
+    await this.device.queue.onSubmittedWorkDone();
 
     await this.streamCompact.compactActiveIDs(this.cacheSize,
                                               this.slotAvailableForCompact,

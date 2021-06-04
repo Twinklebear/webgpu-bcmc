@@ -433,11 +433,20 @@ VolumeRaycaster.prototype.setCompressedVolume =
 
     await this.computeBlockRanges();
 
-    this.blockActiveBuffer =
-        this.device.createBuffer({size: 4 * this.totalBlocks, usage: GPUBufferUsage.STORAGE});
+    this.blockActiveBuffer = this.device.createBuffer(
+        {size: 4 * this.totalBlocks, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC});
 
-    this.blockNumRaysBuffer =
-        this.device.createBuffer({size: 4 * this.totalBlocks, usage: GPUBufferUsage.STORAGE});
+    this.blockNumRaysBuffer = this.device.createBuffer(
+        {size: 4 * this.totalBlocks, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC});
+
+    // Scan result buffer for the block ray offsets (computed by scanning the result in
+    // blockNumRaysBuffer)
+    this.blockRayOffsetBuffer = this.device.createBuffer({
+        size: 4 * this.scanPipeline.getAlignedSize(this.totalBlocks),
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
+    });
+    this.scanBlockRayOffsets = this.scanPipeline.prepareGPUInput(
+        this.blockRayOffsetBuffer, this.scanPipeline.getAlignedSize(this.totalBlocks));
 
     this.resetRaysBG = this.device.createBindGroup({
         layout: this.resetRaysBGLayout,
@@ -573,7 +582,10 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
     this.device.queue.submit([commandEncoder.finish()]);
 };
 
-VolumeRaycaster.prototype.renderSurface = async function(isovalue, viewParamUpload) {
+VolumeRaycaster.prototype.renderSurface =
+    async function(isovalue, viewParamUpload, perfTracker) {
+    console.log("===== Rendering Surface =======");
+
     // Upload the isovalue
     await this.uploadIsovalueBuf.mapAsync(GPUMapMode.WRITE);
     new Float32Array(this.uploadIsovalueBuf.getMappedRange()).set([isovalue]);
@@ -595,6 +607,20 @@ VolumeRaycaster.prototype.renderSurface = async function(isovalue, viewParamUplo
     await this.macroTraverse();
 
     await this.markActiveBlocks();
+
+    // Decompress any new blocks needed for the pass
+    var [nBlocksToDecompress, decompressBlockIDs] =
+        await this.lruCache.update(this.blockActiveBuffer, perfTracker);
+    if (nBlocksToDecompress != 0) {
+        console.log(`Will decompress ${nBlocksToDecompress} blocks`);
+        await this.decompressBlocks(nBlocksToDecompress, decompressBlockIDs);
+    }
+
+    var numRaysActive = await this.computeBlockRayOffsets();
+    console.log(`numRaysActive = ${numRaysActive}`);
+    if (numRaysActive == 0) {
+        return;
+    }
 };
 
 // Reset the rays and compute the initial set of rays that intersect the volume
@@ -680,6 +706,17 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
     pass.endPass();
 
     this.device.queue.submit([commandEncoder.finish()]);
+};
+
+// Scan the blockNumRaysBuffer storing the output in blockRayOffsetBuffer and
+// return the number of active rays.
+VolumeRaycaster.prototype.computeBlockRayOffsets = async function() {
+    var commandEncoder = this.device.createCommandEncoder();
+    commandEncoder.copyBufferToBuffer(
+        this.blockNumRaysBuffer, 0, this.blockRayOffsetBuffer, 0, 4 * this.totalBlocks);
+    this.device.queue.submit([commandEncoder.finish()]);
+
+    return await this.scanBlockRayOffsets.scan(this.totalBlocks);
 };
 
 VolumeRaycaster.prototype.decompressBlocks =
