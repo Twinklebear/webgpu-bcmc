@@ -47,11 +47,11 @@ void main() {
     uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
 
     if (rays[ray_index].t == FLT_MAX) {
-        imageStore(render_target, ivec2(gl_GlobalInvocationID.xy), vec4(0.1, 0.1, 0.1, 1.0));
+        // For testing: show the volume bounds as a black box
+        imageStore(render_target, ivec2(gl_GlobalInvocationID.xy), vec4(0, 0, 0, 1.0));
         return;
     }
-        imageStore(render_target, ivec2(gl_GlobalInvocationID.xy), vec4(0, 0, 0, 1.0));
-    
+
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
     const vec3 macrogrid_dims = vec3(n_blocks);
 
