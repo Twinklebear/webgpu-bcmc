@@ -1,4 +1,4 @@
-var VolumeRaycaster = function(device, canvas_dims) {
+var VolumeRaycaster = function(device, canvas) {
     this.device = device;
     this.scanPipeline = new ExclusiveScanPipeline(device);
     this.streamCompact = new StreamCompact(device);
@@ -6,8 +6,8 @@ var VolumeRaycaster = function(device, canvas_dims) {
     this.numVertices = 0;
     this.numBlocksWithVertices = 0;
 
-    this.canvas = document.getElementById("webgpu-canvas");
-    var context = this.canvas.getContext("gpupresent");
+    this.canvas = canvas;
+    console.log(`canvas size ${canvas.width}x${canvas.height}`);
 
     // Max dispatch size for more computationally heavy kernels
     // which might hit TDR on lower power devices
@@ -139,8 +139,29 @@ var VolumeRaycaster = function(device, canvas_dims) {
     // We'll need a max of canvas.width * canvas.height RayInfo structs in the buffer,
     // so just allocate it once up front
     this.rayInformationBuffer = device.createBuffer({
-        size: this.canvas.width * this.canvas.height * 20,
+        size: this.canvas.width * this.canvas.height * 32,
         usage: GPUBufferUsage.STORAGE,
+    });
+
+    this.resetRaysBGLayout = device.createBindGroupLayout({
+        entries: [
+            {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+            {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}}
+        ]
+    });
+
+    this.resetRaysPipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout({
+            bindGroupLayouts: [
+                this.resetRaysBGLayout,
+            ],
+        }),
+        compute: {
+            module: device.createShaderModule({
+                code: reset_rays_comp_spv,
+            }),
+            entryPoint: "main",
+        },
     });
 
     this.computeInitialRaysBGLayout = device.createBindGroupLayout({
@@ -186,7 +207,7 @@ var VolumeRaycaster = function(device, canvas_dims) {
     // Setup render outputs
     var renderTargetFormat = "rgba8unorm";
     this.renderTarget = this.device.createTexture({
-        size: [canvas_dims[0], canvas_dims[1], 1],
+        size: [this.canvas.width, this.canvas.height, 1],
         format: renderTargetFormat,
         usage: GPUTextureUsage.STORAGE | GPUTextureUsage.RENDER_ATTACHMENT
     });
@@ -218,7 +239,7 @@ var VolumeRaycaster = function(device, canvas_dims) {
                 {
                     format: renderTargetFormat,
                     // NOTE: allow writes for debugging
-                    //writeMask: 0,
+                    // writeMask: 0,
                 },
             ],
         },
@@ -266,6 +287,12 @@ var VolumeRaycaster = function(device, canvas_dims) {
                 buffer: {
                     type: "storage",
                 }
+            },
+            {
+                // Also pass the render target for debugging
+                binding: 4,
+                visibility: GPUShaderStage.COMPUTE,
+                storageTexture: {access: "write-only", format: renderTargetFormat}
             }
         ],
     });
@@ -344,6 +371,14 @@ VolumeRaycaster.prototype.setCompressedVolume =
 
     await this.computeBlockRanges();
 
+    this.resetRaysBG = this.device.createBindGroup({
+        layout: this.resetRaysBGLayout,
+        entries: [
+            {binding: 0, resource: {buffer: this.rayInformationBuffer}},
+            {binding: 1, resource: {buffer: this.volumeInfoBuffer}},
+        ]
+    });
+
     this.initialRaysBindGroup = this.device.createBindGroup({
         layout: this.computeInitialRaysBGLayout,
         entries: [
@@ -395,6 +430,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
                     buffer: this.rayInformationBuffer,
                 },
             },
+            {binding: 4, resource: this.renderTarget.createView()}
         ],
     });
 };
@@ -444,11 +480,27 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
     this.device.queue.submit([commandEncoder.finish()]);
 };
 
+VolumeRaycaster.prototype.renderSurface = async function(isovalue, viewParamUpload) {
+    // Upload the isovalue
+    await this.uploadIsovalueBuf.mapAsync(GPUMapMode.WRITE);
+    new Float32Array(this.uploadIsovalueBuf.getMappedRange()).set([isovalue]);
+    this.uploadIsovalueBuf.unmap();
+
+    await this.computeInitialRays(viewParamUpload);
+
+    await this.macroTraverse();
+};
+
 VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
-    console.log("Computing initial rays");
     var commandEncoder = this.device.createCommandEncoder();
 
     commandEncoder.copyBufferToBuffer(viewParamUpload, 0, this.viewParamBuf, 0, 20 * 4);
+
+    var resetRaysPass = commandEncoder.beginComputePass(this.resetRaysPipeline);
+    resetRaysPass.setBindGroup(0, this.resetRaysBG);
+    resetRaysPass.setPipeline(this.resetRaysPipeline);
+    resetRaysPass.dispatch(this.canvas.width, this.canvas.height, 1);
+    resetRaysPass.endPass();
 
     var initialRaysPass = commandEncoder.beginRenderPass(this.initialRaysPassDesc);
 
@@ -461,11 +513,10 @@ VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
     this.device.queue.submit([commandEncoder.finish()]);
 };
 
-VolumeRaycaster.prototype.macroTraverse = async function(isovalue) {
-    // Upload the isovalue
-    await this.uploadIsovalueBuf.mapAsync(GPUMapMode.WRITE);
-    new Float32Array(this.uploadIsovalueBuf.getMappedRange()).set([isovalue]);
-    this.uploadIsovalueBuf.unmap();
+VolumeRaycaster.prototype.macroTraverse = async function() {
+    // TODO: Would it be worth doing a scan and compact to find just the IDs of the currently
+    // active rays? then only advancing them? We'll do that anyways so it would tell us when
+    // we're done too (no rays active)
 
     var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(this.uploadIsovalueBuf, 0, this.volumeInfoBuffer, 52, 4);

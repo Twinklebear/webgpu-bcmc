@@ -1,0 +1,26 @@
+#version 450 core
+
+#include "util.glsl"
+
+layout(set = 0, binding = 0, std430) buffer RayInformation {
+    RayInfo rays[];
+};
+
+layout(set = 0, binding = 1, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+
+    uint max_bits;
+    float isovalue;
+    uint image_width;
+};
+
+void main() {
+    uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
+    rays[ray_index].ray_dir = vec3(0);
+    rays[ray_index].block_id = UINT_MAX;
+    rays[ray_index].t = FLT_MAX;
+}
+

@@ -29,7 +29,8 @@ shaders = [
     "reverse_buffer.comp",
     "merge_sorted_chunks.comp",
     "display_render.vert",
-    "display_render.frag"
+    "display_render.frag",
+    "reset_rays.comp"
 ]
 
 try:

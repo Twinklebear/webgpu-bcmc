@@ -1,15 +1,9 @@
 #version 450 core
-#define UINT_MAX uint(0xffffffff)
-#define FLT_MAX ( 3.402823466e+38f )
+
+#include "util.glsl"
 
 layout(location = 0) in vec3 vray_dir;
 layout(location = 1) flat in vec3 transformed_eye;
-
-struct RayInfo {
-    uint block_id;
-    vec3 ray_dir;
-    float t;
-};
 
 layout(set = 0, binding = 1, std430) buffer RayInformation {
     RayInfo rays[];
@@ -20,6 +14,7 @@ layout(set = 0, binding = 2, std140) uniform VolumeParams
     uvec4 volume_dims;
     uvec4 padded_dims;
     vec4 volume_scale;
+
     uint max_bits;
     float isovalue;
     uint image_width;
@@ -50,14 +45,10 @@ void main() {
 	// of the eye
 	t_hit.x = max(t_hit.x, 0.0);
     
-    uint index = uint(gl_FragCoord.x) + image_width * uint(gl_FragCoord.y);
+    const uint pixel = uint(gl_FragCoord.x) + image_width * uint(gl_FragCoord.y);
 	if (t_hit.x < t_hit.y) {
-        rays[index].block_id = UINT_MAX;
-        rays[index].ray_dir = ray_dir;
-        rays[index].t = t_hit.x;
-	} else {
-        rays[index].block_id = UINT_MAX;
-        rays[index].ray_dir = ray_dir;
-        rays[index].t = FLT_MAX;
+        rays[pixel].ray_dir = ray_dir;
+        rays[pixel].block_id = UINT_MAX;
+        rays[pixel].t = t_hit.x;
     }
 }

@@ -4,9 +4,6 @@
     var device = await adapter.requestDevice();
 
     var canvas = document.getElementById("webgpu-canvas");
-    var canvas_dims =
-        [parseInt(canvas.getAttribute("width")), parseInt(canvas.getAttribute("height"))];
-    console.log(canvas_dims);
     var context = canvas.getContext("gpupresent");
 
     var dataset = datasets.skull;
@@ -35,7 +32,7 @@
         return;
     }
 
-    var volumeRC = new VolumeRaycaster(device, canvas_dims);
+    var volumeRC = new VolumeRaycaster(device, canvas);
     await volumeRC.setCompressedVolume(
         compressedData, dataset.compressionRate, volumeDims, dataset.scale);
     compressedData = null;
@@ -60,7 +57,6 @@
     isovalueSlider.value = (dataset.range[0] + dataset.range[1]) / 2.0;
     var currentIsovalue = isovalueSlider.value;
 
-    // Render it!
     const defaultEye = vec3.set(vec3.create(), 0.0, 0.0, 2.0);
     const center = vec3.set(vec3.create(), 0.0, 0.0, 0.0);
     const up = vec3.set(vec3.create(), 0.0, 1.0, 0.0);
@@ -70,7 +66,7 @@
       const center = vec3.add(vec3.create(), defaultEye, defaultDir);
       const up = vec3.set(vec3.create(), -0.0088, -0.0492, 0.999);
       */
-    var camera = new ArcballCamera(defaultEye, center, up, 2, [
+    var camera = new ArcballCamera(defaultEye, center, up, 4, [
         canvas.width,
         canvas.height,
     ]);
@@ -174,6 +170,7 @@
         totalTime: [],
     };
 
+    var recomputeSurface = true;
     while (true) {
         projView = mat4.mul(projView, proj, camera.camera);
         await upload.mapAsync(GPUMapMode.WRITE);
@@ -184,9 +181,7 @@
 
         if (cameraChanged) {
             cameraChanged = false;
-
-            // Compute the new set of rays for the updated viewpoint
-            await volumeRC.computeInitialRays(upload);
+            recomputeSurface = true;
 
             var eyePos = camera.eyePos();
             var eyeDir = camera.eyeDir();
@@ -235,13 +230,15 @@
         }
 
         if (isovalueSlider.value != currentIsovalue || requestRecompute) {
+            recomputeSurface = true;
             currentIsovalue = parseFloat(isovalueSlider.value);
 
+            /*
             perfResults.isovalue.push(currentIsovalue);
             perfResults.totalTime.push(end - start);
 
-            displayMCInfo();
-            displayCacheInfo();
+            //displayMCInfo();
+            //displayCacheInfo();
 
             var memUse = compressedMC.reportMemoryUse();
             mcMemDisplay.innerHTML = memUse[0];
@@ -251,6 +248,7 @@
             requestRecompute = false;
             numFrames = 0;
             totalTimeMS = 0;
+            */
 
             // TODO: We'll want to only print this after the benchmark run is done
             /*
@@ -261,6 +259,10 @@
                perfResults[prop].length).toFixed(3)}`);
                   }
                   */
+        }
+
+        if (recomputeSurface) {
+            volumeRC.renderSurface(currentIsovalue, upload);
         }
 
         // Blit the image rendered by the raycaster onto the screen
