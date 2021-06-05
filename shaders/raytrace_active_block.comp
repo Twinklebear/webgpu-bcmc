@@ -48,71 +48,78 @@ void main(void)
     vec3 vol_eye = transformed_eye * volume_dims.xyz - vec3(0.5);
 
     // Process all the rays for this block in parallel, each thread takes one ray
-    // so we can do 64 rays at a time. For cases where a block projects to many more
+    // so we can do 64 rays at a time. For cases where a block projects to a lot more
     // than 64 pixels it'd be good to break up the rays to be processed by multiple
-    // work groups to avoid serializing rendering 
-    // TODO: Need to dispatch for each chunk of BLOCK_NUM_VOXELS rays that the block covers
-    // so that we don't run into varying control flow issues w/ syncs and to avoid serializing
-    // rendering for zoomed in views of smaller volumes
-    // Threads without a ray "write" out of bounds, which is defined to do nothing
-    ivec2 pixel_coords = ivec2(-1);
-    vec4 color = vec4(0);
-    color.a = 1;
-    uint ray_id = gl_LocalInvocationID.x;
-
-    if (ray_id < block_info.num_rays) {
-        const uint ray_index = ray_ids[block_info.ray_offset + ray_id];
-        pixel_coords = ivec2(ray_id_to_pos(ray_index));
-
-        vec3 grid_ray_dir = rays[ray_index].ray_dir;
-
-        float t_current = rays[ray_index].t;
-        vec3 p = (vol_eye + t_current * grid_ray_dir);
-        p = clamp(p, block_pos, vec3(block_pos + block_dims - 2));
-
-        const vec3 inv_grid_ray_dir = 1.0 / grid_ray_dir;
-        vec3 cell = floor(p);
-        const vec3 t_max_neg = (cell - vol_eye) * inv_grid_ray_dir;
-        const vec3 t_max_pos = (cell + vec3(1) - vol_eye) * inv_grid_ray_dir;
-        const bvec3 is_neg_dir = lessThan(grid_ray_dir, vec3(0));
-        // Pick between positive/negative t_max based on the ray sign
-        vec3 t_max = mix(t_max_pos, t_max_neg, is_neg_dir);
-        const ivec3 grid_step = ivec3(sign(grid_ray_dir));
-        // Note: each voxel is a 1^3 box on the grid
-        const vec3 t_delta = abs(inv_grid_ray_dir);
-
-        // Traverse the ray through the dual grid 
-        float vertex_values[8];
-        vec2 cell_range;
-        while (!outside_dual_grid(cell - block_pos, vec3(block_dims))) {
-            const ivec3 v000 = ivec3(cell - block_pos);
-            compute_vertex_values(v000, block_dims, vertex_values, cell_range);
-
-            const float t_next = min(t_max.x, min(t_max.y, t_max.z));
-            const bool skip_cell = isovalue < cell_range.x || isovalue > cell_range.y;
-
-            // TODO: intersect isosurface, right now for initial testing just mark the cell
-            if (!skip_cell) {
-                color = vec4(1);
-                break;
-            }
-
-            t_current = t_next;
-            // Advance in the grid
-            if (t_next == t_max.x) {
-                cell.x += grid_step.x;
-                t_max.x += t_delta.x;
-            } else if (t_next == t_max.y) {
-                cell.y += grid_step.y;
-                t_max.y += t_delta.y;
-            } else {
-                cell.z += grid_step.z;
-                t_max.z += t_delta.z;
-            }
-        }
-        // Update the ray t value for the next iteration of traversing the macrocell grid
-        rays[ray_index].t = t_current;
+    // work groups to avoid serializing rendering. However that might not be a common case
+    // for most large volumes. For the last chunk, threads that don't have a ray to
+    // process just write an invalid texture coordinate, which results in the write
+    // being discarded. However, they have to call imageStore collectively, as it's a
+    // sync point
+    uint chunks = (block_info.num_rays / gl_WorkGroupSize.x);
+    if (block_info.num_rays % gl_WorkGroupSize.x > 1) {
+        ++chunks;
     }
-    imageStore(render_target, pixel_coords, color);
+
+    for (uint i = 0; i < chunks; ++i) {
+        ivec2 pixel_coords = ivec2(-1);
+        vec4 color = vec4(0);
+        color.a = 1;
+        uint ray_id = i * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+
+        if (ray_id < block_info.num_rays) {
+            const uint ray_index = ray_ids[block_info.ray_offset + ray_id];
+            pixel_coords = ivec2(ray_id_to_pos(ray_index));
+
+            vec3 grid_ray_dir = rays[ray_index].ray_dir;
+
+            float t_current = rays[ray_index].t;
+            vec3 p = (vol_eye + t_current * grid_ray_dir);
+            p = clamp(p, block_pos, vec3(block_pos + block_dims - 2));
+
+            const vec3 inv_grid_ray_dir = 1.0 / grid_ray_dir;
+            vec3 cell = floor(p);
+            const vec3 t_max_neg = (cell - vol_eye) * inv_grid_ray_dir;
+            const vec3 t_max_pos = (cell + vec3(1) - vol_eye) * inv_grid_ray_dir;
+            const bvec3 is_neg_dir = lessThan(grid_ray_dir, vec3(0));
+            // Pick between positive/negative t_max based on the ray sign
+            vec3 t_max = mix(t_max_pos, t_max_neg, is_neg_dir);
+            const ivec3 grid_step = ivec3(sign(grid_ray_dir));
+            // Note: each voxel is a 1^3 box on the grid
+            const vec3 t_delta = abs(inv_grid_ray_dir);
+
+            // Traverse the ray through the dual grid 
+            float vertex_values[8];
+            vec2 cell_range;
+            while (!outside_dual_grid(cell - block_pos, vec3(block_dims))) {
+                const ivec3 v000 = ivec3(cell - block_pos);
+                compute_vertex_values(v000, block_dims, vertex_values, cell_range);
+
+                const float t_next = min(t_max.x, min(t_max.y, t_max.z));
+                const bool skip_cell = isovalue < cell_range.x || isovalue > cell_range.y;
+
+                // TODO: intersect isosurface, right now for initial testing just mark the cell
+                if (!skip_cell) {
+                    color = vec4(1);
+                    break;
+                }
+
+                t_current = t_next;
+                // Advance in the grid
+                if (t_next == t_max.x) {
+                    cell.x += grid_step.x;
+                    t_max.x += t_delta.x;
+                } else if (t_next == t_max.y) {
+                    cell.y += grid_step.y;
+                    t_max.y += t_delta.y;
+                } else {
+                    cell.z += grid_step.z;
+                    t_max.z += t_delta.z;
+                }
+            }
+            // Update the ray t value for the next iteration of traversing the macrocell grid
+            rays[ray_index].t = t_current;
+        }
+        imageStore(render_target, pixel_coords, color);
+    }
 }
 

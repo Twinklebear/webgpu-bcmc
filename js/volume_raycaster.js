@@ -1023,42 +1023,6 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     console.log(`radix sort ray's by blocks: ${end - start}ms`);
     console.log(`sortActiveRaysByBlock total: ${end - startFn}ms`);
 
-    {
-        var debugReadbackBlock = this.device.createBuffer({
-            size: numRaysActive * 4,
-            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
-        });
-        var debugReadbackRay = this.device.createBuffer({
-            size: numRaysActive * 4,
-            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
-        });
-        var commandEncoder = this.device.createCommandEncoder();
-        commandEncoder.copyBufferToBuffer(
-            this.compactRayBlockIDBuffer, 0, debugReadbackBlock, 0, numRaysActive * 4);
-        commandEncoder.copyBufferToBuffer(
-            this.rayIDBuffer, 0, debugReadbackRay, 0, numRaysActive * 4);
-        await this.device.queue.submit([commandEncoder.finish()]);
-
-        await debugReadbackBlock.mapAsync(GPUMapMode.READ);
-        await debugReadbackRay.mapAsync(GPUMapMode.READ);
-
-        var blocks = new Uint32Array(debugReadbackBlock.getMappedRange());
-        var rays = new Uint32Array(debugReadbackRay.getMappedRange());
-
-        var blockRayCounts = {};
-        for (var i = 0; i < numRaysActive; ++i) {
-            if (!(blocks[i] in blockRayCounts)) {
-                blockRayCounts[blocks[i]] = 1;
-            } else {
-                blockRayCounts[blocks[i]] += 1;
-            }
-        }
-        console.log(blockRayCounts);
-
-        debugReadbackBlock.unmap();
-        debugReadbackRay.unmap();
-    }
-
     return numActiveBlocks;
 };
 
@@ -1085,17 +1049,12 @@ VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks
     pass.setBindGroup(0, this.combineBlockInformationBG);
     pass.dispatch(numActiveBlocks, 1, 1);
 
-    // TODO: Because of some control flow/sync limitations and potential for serializing
-    // rendering when zoomed in on low res volumes, this should change to dispatch one
-    // work group per chunk of 64 rays for each block. This will parallelize rendering well too
-    // TODO: this can be dispatched using dispatch indirect, build the commands on the GPU
-    // so we can avoid reading back the data. Open Q: how to get the dispatch ID so we know
-    // which block we're processing?
-    // I think this would have to be passed through a different bindgroup, because each
-    // dispatch indirect will read one set of dispatch info from the buffer
-    // Or some other way to dispatch? Maybe can rework the shader some,
-    // since the other hand is that for high res volumes we'll often have
-    // many blocks covering few pixels, which turns into a ton of dispatches 
+    // TODO: Might be worth for data sets where many blocks
+    // project to a lot of pixels to split up the dispatches,
+    // and do multiple dispatch indirect for the blocks touching
+    // many pixels so that we don't serialize so badly on them, while
+    // still doing a single dispatch for all blocks touching <= 64 pixels
+    // since that will be most of the blocks, especially for large data. 
     pass.setPipeline(this.raytraceBlocksPipeline);
     pass.setBindGroup(0, rtBlocksPipelineBG0);
     pass.setBindGroup(1, this.rtBlocksPipelineBG1);
