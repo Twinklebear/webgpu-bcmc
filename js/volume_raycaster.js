@@ -136,7 +136,7 @@ var VolumeRaycaster = function(device, canvas) {
     // so just allocate it once up front
     this.rayInformationBuffer = device.createBuffer({
         size: this.canvas.width * this.canvas.height * 32,
-        usage: GPUBufferUsage.STORAGE,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
 
     this.resetRaysBGLayout = device.createBindGroupLayout({
@@ -837,8 +837,13 @@ VolumeRaycaster.prototype.renderSurface =
     await this.computeInitialRays(viewParamUpload);
 
     // Just two passes to test
-    for (var i = 0; i < 10; ++i) {
+    var totalPassTime = 0;
+    var numPasses = 0;
+    for (var i = 0; i < 50; ++i) {
+        numPasses += 1;
         console.log(`++++ Surface pass ${i} ++++`);
+        var startPass = performance.now();
+
         var start = performance.now();
         await this.macroTraverse();
         var end = performance.now();
@@ -866,7 +871,7 @@ VolumeRaycaster.prototype.renderSurface =
         console.log(`Ray active and offsets: ${end - start}ms`);
         console.log(`numRaysActive = ${numRaysActive}`);
         if (numRaysActive == 0) {
-            return;
+            break;
         }
 
         start = performance.now();
@@ -878,7 +883,11 @@ VolumeRaycaster.prototype.renderSurface =
         await this.raytraceVisibleBlocks(numActiveBlocks);
         end = performance.now();
         console.log(`Raytrace blocks: ${end - start}ms`);
+        console.log(`PASS TOOK: ${end - startPass}ms`);
+        console.log(`++++++++++`);
+        totalPassTime += end - startPass;
     }
+    console.log(`Avg time per pass ${totalPassTime / numPasses}ms`);
 };
 
 // Reset the rays and compute the initial set of rays that intersect the volume
@@ -1043,6 +1052,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     console.log(`radix sort ray's by blocks: ${end - start}ms`);
     console.log(`sortActiveRaysByBlock total: ${end - startFn}ms`);
 
+    /*
     {
         var debugReadbackBlock = this.device.createBuffer({
             size: numRaysActive * 4,
@@ -1052,18 +1062,32 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
             size: numRaysActive * 4,
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
         });
+        var debugReadbackRayInformation = this.device.createBuffer({
+            size: this.canvas.width * this.canvas.height * 32,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+        });
+
         var commandEncoder = this.device.createCommandEncoder();
         commandEncoder.copyBufferToBuffer(
             this.compactRayBlockIDBuffer, 0, debugReadbackBlock, 0, numRaysActive * 4);
         commandEncoder.copyBufferToBuffer(
             this.rayIDBuffer, 0, debugReadbackRay, 0, numRaysActive * 4);
+        commandEncoder.copyBufferToBuffer(this.rayInformationBuffer,
+                                          0,
+                                          debugReadbackRayInformation,
+                                          0,
+                                          this.canvas.width * this.canvas.height * 32);
         await this.device.queue.submit([commandEncoder.finish()]);
 
         await debugReadbackBlock.mapAsync(GPUMapMode.READ);
         await debugReadbackRay.mapAsync(GPUMapMode.READ);
+        await debugReadbackRayInformation.mapAsync(GPUMapMode.READ);
 
         var blocks = new Uint32Array(debugReadbackBlock.getMappedRange());
         var rays = new Uint32Array(debugReadbackRay.getMappedRange());
+        var rayInfoMapped = debugReadbackRayInformation.getMappedRange();
+        var rayInformationFloat = new Float32Array(rayInfoMapped);
+        var rayInformationInt = new Float32Array(rayInfoMapped);
 
         var blockRayCounts = {};
         for (var i = 0; i < numRaysActive; ++i) {
@@ -1073,11 +1097,34 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
                 blockRayCounts[blocks[i]].push(rays[i]);
             }
         }
+        // size of a ray in floats/u32's
+        var sizeofRay = 32 / 4;
         console.log(blockRayCounts);
+        for (var ids in blockRayCounts) {
+            for (var i = 0; i < ids.length; ++i) {
+                var rstart = rays[i] * sizeofRay;
+                var dir = [
+                    rayInformationFloat[rstart],
+                    rayInformationFloat[rstart + 1],
+                    rayInformationFloat[rstart + 2]
+                ];
+                var block_id = rayInformationInt[rstart + 3];
+                var t = rayInformationFloat[rstart + 4];
+                var t_next = rayInformationFloat[rstart + 5];
+                console.log(`Ray ${rays[i]}: dir=${dir}, block_id=${block_id}, t=${
+                    t}, t_next=${t_next}`);
+            }
+        }
 
         debugReadbackBlock.unmap();
         debugReadbackRay.unmap();
+        debugReadbackRayInformation.unmap();
+
+        debugReadbackBlock.destroy();
+        debugReadbackRay.destroy();
+        debugReadbackRayInformation.destroy();
     }
+    */
 
     return numActiveBlocks;
 };

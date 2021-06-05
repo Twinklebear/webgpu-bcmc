@@ -78,6 +78,9 @@ void main() {
         const ivec3 block_pos = ivec3(cell);
 
         float t_next = min(t_max.x, min(t_max.y, t_max.z));
+        if (t_next < t_current) {
+            break;
+        }
 
         uint block_id = block_pos.x + n_blocks.x * (block_pos.y + n_blocks.y * block_pos.z);
         vec2 cell_range = block_ranges[block_id];
