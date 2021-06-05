@@ -3,6 +3,7 @@ var VolumeRaycaster = function(device, canvas) {
     this.scanPipeline = new ExclusiveScanPipeline(device);
     this.streamCompact = new StreamCompact(device);
     this.numActiveBlocks = 0;
+    this.renderComplete = false;
 
     this.canvas = canvas;
     console.log(`canvas size ${canvas.width}x${canvas.height}`);
@@ -816,64 +817,65 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
     this.device.queue.submit([commandEncoder.finish()]);
 };
 
+// Progressively compute the surface, returns true when rendering is complete
 VolumeRaycaster.prototype.renderSurface =
-    async function(isovalue, viewParamUpload, perfTracker) {
+    async function(isovalue, viewParamUpload, perfTracker, renderParamsChanged) {
+    if (this.renderComplete && !renderParamsChanged) {
+        return this.renderComplete;
+    }
     console.log("===== Rendering Surface =======");
 
-    // Upload the isovalue
-    await this.uploadIsovalueBuf.mapAsync(GPUMapMode.WRITE);
-    new Float32Array(this.uploadIsovalueBuf.getMappedRange()).set([isovalue]);
-    this.uploadIsovalueBuf.unmap();
+    if (renderParamsChanged) {
+        // Upload the isovalue
+        await this.uploadIsovalueBuf.mapAsync(GPUMapMode.WRITE);
+        new Float32Array(this.uploadIsovalueBuf.getMappedRange()).set([isovalue]);
+        this.uploadIsovalueBuf.unmap();
 
-    // Reset active blocks for the new viewpoint/isovalue to allow eviction of old blocks
-    var commandEncoder = this.device.createCommandEncoder();
-    var pass = commandEncoder.beginComputePass();
-    pass.setPipeline(this.resetBlockActivePipeline);
-    pass.setBindGroup(0, this.resetBlockActiveBG);
-    pass.dispatch(this.blockGridDims[0], this.blockGridDims[1], this.blockGridDims[2]);
-    pass.endPass();
-    this.device.queue.submit([commandEncoder.finish()]);
+        // Reset active blocks for the new viewpoint/isovalue to allow eviction of old blocks
+        var commandEncoder = this.device.createCommandEncoder();
+        var pass = commandEncoder.beginComputePass();
+        pass.setPipeline(this.resetBlockActivePipeline);
+        pass.setBindGroup(0, this.resetBlockActiveBG);
+        pass.dispatch(this.blockGridDims[0], this.blockGridDims[1], this.blockGridDims[2]);
+        pass.endPass();
+        this.device.queue.submit([commandEncoder.finish()]);
 
-    await this.computeInitialRays(viewParamUpload);
+        await this.computeInitialRays(viewParamUpload);
 
-    // Just two passes to test
-    var totalPassTime = 0;
-    var numPasses = 0;
-    for (var i = 0; i < 50; ++i) {
-        numPasses += 1;
-        console.log(`++++ Surface pass ${i} ++++`);
-        var startPass = performance.now();
+        this.totalPassTime = 0;
+        this.numPasses = 0;
+    }
+    // for (var i = 0; i < 50; ++i) {
+    console.log(`++++ Surface pass ${this.numPasses} ++++`);
+    var startPass = performance.now();
 
-        var start = performance.now();
-        await this.macroTraverse();
-        var end = performance.now();
-        console.log(`Macro Traverse: ${end - start}ms`);
+    var start = performance.now();
+    await this.macroTraverse();
+    var end = performance.now();
+    console.log(`Macro Traverse: ${end - start}ms`);
 
-        start = performance.now();
-        await this.markActiveBlocks();
-        end = performance.now();
-        console.log(`Mark Active Blocks: ${end - start}ms`);
+    start = performance.now();
+    await this.markActiveBlocks();
+    end = performance.now();
+    console.log(`Mark Active Blocks: ${end - start}ms`);
 
-        // Decompress any new blocks needed for the pass
-        start = performance.now();
-        var [nBlocksToDecompress, decompressBlockIDs] =
-            await this.lruCache.update(this.blockActiveBuffer, perfTracker);
-        if (nBlocksToDecompress != 0) {
-            console.log(`Will decompress ${nBlocksToDecompress} blocks`);
-            await this.decompressBlocks(nBlocksToDecompress, decompressBlockIDs);
-        }
-        end = performance.now();
-        console.log(`LRU and Decompress: ${end - start}ms`);
+    // Decompress any new blocks needed for the pass
+    start = performance.now();
+    var [nBlocksToDecompress, decompressBlockIDs] =
+        await this.lruCache.update(this.blockActiveBuffer, perfTracker);
+    if (nBlocksToDecompress != 0) {
+        console.log(`Will decompress ${nBlocksToDecompress} blocks`);
+        await this.decompressBlocks(nBlocksToDecompress, decompressBlockIDs);
+    }
+    end = performance.now();
+    console.log(`LRU and Decompress: ${end - start}ms`);
 
-        start = performance.now();
-        var numRaysActive = await this.computeBlockRayOffsets();
-        end = performance.now();
-        console.log(`Ray active and offsets: ${end - start}ms`);
-        console.log(`numRaysActive = ${numRaysActive}`);
-        if (numRaysActive == 0) {
-            break;
-        }
-
+    start = performance.now();
+    var numRaysActive = await this.computeBlockRayOffsets();
+    end = performance.now();
+    console.log(`Ray active and offsets: ${end - start}ms`);
+    console.log(`numRaysActive = ${numRaysActive}`);
+    if (numRaysActive > 0) {
         start = performance.now();
         var numActiveBlocks = await this.sortActiveRaysByBlock(numRaysActive);
         end = performance.now();
@@ -885,9 +887,15 @@ VolumeRaycaster.prototype.renderSurface =
         console.log(`Raytrace blocks: ${end - start}ms`);
         console.log(`PASS TOOK: ${end - startPass}ms`);
         console.log(`++++++++++`);
-        totalPassTime += end - startPass;
     }
-    console.log(`Avg time per pass ${totalPassTime / numPasses}ms`);
+    this.totalPassTime += end - startPass;
+    this.numPasses += 1;
+    //}
+    this.renderComplete = numRaysActive == 0;
+    if (this.renderComplete) {
+        console.log(`Avg time per pass ${this.totalPassTime / this.numPasses}ms`);
+    }
+    return this.renderComplete;
 };
 
 // Reset the rays and compute the initial set of rays that intersect the volume
