@@ -171,6 +171,7 @@
     };
 
     var recomputeSurface = true;
+    var lastComputeTime = 0;
     while (true) {
         projView = mat4.mul(projView, proj, camera.camera);
         await upload.mapAsync(GPUMapMode.WRITE);
@@ -264,7 +265,11 @@
         if (recomputeSurface) {
             recomputeSurface = false;
             var perfTracker = {};
+            var start = performance.now();
             await volumeRC.renderSurface(currentIsovalue, upload, perfTracker);
+            var end = performance.now();
+            console.log(`Total pipeline: ${Math.round(end - start)}ms`);
+            lastComputeTime = Math.round(end - start);
         }
 
         // Blit the image rendered by the raycaster onto the screen
@@ -285,6 +290,7 @@
         var end = performance.now();
         numFrames += 1;
         totalTimeMS += end - start;
-        fpsDisplay.innerHTML = `Avg. FPS ${Math.round((1000.0 * numFrames) / totalTimeMS)}`;
+        fpsDisplay.innerHTML = `Avg. FPS ${Math.round((1000.0 * numFrames) / totalTimeMS)}<br/>
+            Last Surface took: ${lastComputeTime}ms`;
     }
 })();
