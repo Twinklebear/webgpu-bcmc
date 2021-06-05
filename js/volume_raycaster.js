@@ -826,39 +826,59 @@ VolumeRaycaster.prototype.renderSurface =
     this.uploadIsovalueBuf.unmap();
 
     // Reset active blocks for the new viewpoint/isovalue to allow eviction of old blocks
-    {
-        var commandEncoder = this.device.createCommandEncoder();
-        var pass = commandEncoder.beginComputePass();
-        pass.setPipeline(this.resetBlockActivePipeline);
-        pass.setBindGroup(0, this.resetBlockActiveBG);
-        pass.dispatch(this.blockGridDims[0], this.blockGridDims[1], this.blockGridDims[2]);
-        pass.endPass();
-        this.device.queue.submit([commandEncoder.finish()]);
-    }
+    var commandEncoder = this.device.createCommandEncoder();
+    var pass = commandEncoder.beginComputePass();
+    pass.setPipeline(this.resetBlockActivePipeline);
+    pass.setBindGroup(0, this.resetBlockActiveBG);
+    pass.dispatch(this.blockGridDims[0], this.blockGridDims[1], this.blockGridDims[2]);
+    pass.endPass();
+    this.device.queue.submit([commandEncoder.finish()]);
 
     await this.computeInitialRays(viewParamUpload);
 
-    await this.macroTraverse();
+    // Just two passes to test
+    for (var i = 0; i < 10; ++i) {
+        console.log(`++++ Surface pass ${i} ++++`);
+        var start = performance.now();
+        await this.macroTraverse();
+        var end = performance.now();
+        console.log(`Macro Traverse: ${end - start}ms`);
 
-    await this.markActiveBlocks();
+        start = performance.now();
+        await this.markActiveBlocks();
+        end = performance.now();
+        console.log(`Mark Active Blocks: ${end - start}ms`);
 
-    // Decompress any new blocks needed for the pass
-    var [nBlocksToDecompress, decompressBlockIDs] =
-        await this.lruCache.update(this.blockActiveBuffer, perfTracker);
-    if (nBlocksToDecompress != 0) {
-        console.log(`Will decompress ${nBlocksToDecompress} blocks`);
-        await this.decompressBlocks(nBlocksToDecompress, decompressBlockIDs);
+        // Decompress any new blocks needed for the pass
+        start = performance.now();
+        var [nBlocksToDecompress, decompressBlockIDs] =
+            await this.lruCache.update(this.blockActiveBuffer, perfTracker);
+        if (nBlocksToDecompress != 0) {
+            console.log(`Will decompress ${nBlocksToDecompress} blocks`);
+            await this.decompressBlocks(nBlocksToDecompress, decompressBlockIDs);
+        }
+        end = performance.now();
+        console.log(`LRU and Decompress: ${end - start}ms`);
+
+        start = performance.now();
+        var numRaysActive = await this.computeBlockRayOffsets();
+        end = performance.now();
+        console.log(`Ray active and offsets: ${end - start}ms`);
+        console.log(`numRaysActive = ${numRaysActive}`);
+        if (numRaysActive == 0) {
+            return;
+        }
+
+        start = performance.now();
+        var numActiveBlocks = await this.sortActiveRaysByBlock(numRaysActive);
+        end = performance.now();
+        console.log(`Sort active rays by block: ${end - start}ms`);
+
+        start = performance.now();
+        await this.raytraceVisibleBlocks(numActiveBlocks);
+        end = performance.now();
+        console.log(`Raytrace blocks: ${end - start}ms`);
     }
-
-    var numRaysActive = await this.computeBlockRayOffsets();
-    console.log(`numRaysActive = ${numRaysActive}`);
-    if (numRaysActive == 0) {
-        return;
-    }
-
-    var numActiveBlocks = await this.sortActiveRaysByBlock(numRaysActive);
-
-    await this.raytraceVisibleBlocks(numActiveBlocks);
 };
 
 // Reset the rays and compute the initial set of rays that intersect the volume
@@ -1023,6 +1043,42 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     console.log(`radix sort ray's by blocks: ${end - start}ms`);
     console.log(`sortActiveRaysByBlock total: ${end - startFn}ms`);
 
+    {
+        var debugReadbackBlock = this.device.createBuffer({
+            size: numRaysActive * 4,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+        });
+        var debugReadbackRay = this.device.createBuffer({
+            size: numRaysActive * 4,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+        });
+        var commandEncoder = this.device.createCommandEncoder();
+        commandEncoder.copyBufferToBuffer(
+            this.compactRayBlockIDBuffer, 0, debugReadbackBlock, 0, numRaysActive * 4);
+        commandEncoder.copyBufferToBuffer(
+            this.rayIDBuffer, 0, debugReadbackRay, 0, numRaysActive * 4);
+        await this.device.queue.submit([commandEncoder.finish()]);
+
+        await debugReadbackBlock.mapAsync(GPUMapMode.READ);
+        await debugReadbackRay.mapAsync(GPUMapMode.READ);
+
+        var blocks = new Uint32Array(debugReadbackBlock.getMappedRange());
+        var rays = new Uint32Array(debugReadbackRay.getMappedRange());
+
+        var blockRayCounts = {};
+        for (var i = 0; i < numRaysActive; ++i) {
+            if (!(blocks[i] in blockRayCounts)) {
+                blockRayCounts[blocks[i]] = [rays[i]];
+            } else {
+                blockRayCounts[blocks[i]].push(rays[i]);
+            }
+        }
+        console.log(blockRayCounts);
+
+        debugReadbackBlock.unmap();
+        debugReadbackRay.unmap();
+    }
+
     return numActiveBlocks;
 };
 
@@ -1054,7 +1110,7 @@ VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks
     // and do multiple dispatch indirect for the blocks touching
     // many pixels so that we don't serialize so badly on them, while
     // still doing a single dispatch for all blocks touching <= 64 pixels
-    // since that will be most of the blocks, especially for large data. 
+    // since that will be most of the blocks, especially for large data.
     pass.setPipeline(this.raytraceBlocksPipeline);
     pass.setBindGroup(0, rtBlocksPipelineBG0);
     pass.setBindGroup(1, this.rtBlocksPipelineBG1);

@@ -39,8 +39,6 @@ void main() {
     uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
 
     if (rays[ray_index].t == FLT_MAX) {
-        // For testing: show the volume bounds as a black box
-        imageStore(render_target, ivec2(gl_GlobalInvocationID.xy), vec4(0, 0, 0, 1.0));
         return;
     }
 
@@ -79,18 +77,18 @@ void main() {
     while (!outside_grid(cell, macrogrid_dims)) {
         const ivec3 block_pos = ivec3(cell);
 
+        float t_next = min(t_max.x, min(t_max.y, t_max.z));
+
         uint block_id = block_pos.x + n_blocks.x * (block_pos.y + n_blocks.y * block_pos.z);
         vec2 cell_range = block_ranges[block_id];
         if (isovalue >= cell_range.x && isovalue <= cell_range.y) {
             rays[ray_index].block_id = block_id;
             rays[ray_index].t = t_current;
-
-            imageStore(render_target, ivec2(gl_GlobalInvocationID.xy), block_id_to_color(block_pos));
+            rays[ray_index].t_next = t_next;
             return;
         }
 
-        t_current = min(t_max.x, min(t_max.y, t_max.z));
-
+        t_current = t_next;
         // Advance in the grid
         if (t_current == t_max.x) {
             cell.x += grid_step.x;
@@ -105,5 +103,7 @@ void main() {
     }
     rays[ray_index].block_id = UINT_MAX;
     rays[ray_index].t = FLT_MAX;
+    // Flag rays that exit the macrocell grid
+    imageStore(render_target, ivec2(gl_GlobalInvocationID.xy), vec4(0, 0, 0, 1));
 }
 

@@ -56,7 +56,7 @@ void main(void)
     // being discarded. However, they have to call imageStore collectively, as it's a
     // sync point
     uint chunks = (block_info.num_rays / gl_WorkGroupSize.x);
-    if (block_info.num_rays % gl_WorkGroupSize.x > 1) {
+    if (block_info.num_rays % gl_WorkGroupSize.x != 0) {
         ++chunks;
     }
 
@@ -90,6 +90,7 @@ void main(void)
             // Traverse the ray through the dual grid 
             float vertex_values[8];
             vec2 cell_range;
+            bool hit_surface = false;
             while (!outside_dual_grid(cell - block_pos, vec3(block_dims))) {
                 const ivec3 v000 = ivec3(cell - block_pos);
                 compute_vertex_values(v000, block_dims, vertex_values, cell_range);
@@ -99,7 +100,12 @@ void main(void)
 
                 // TODO: intersect isosurface, right now for initial testing just mark the cell
                 if (!skip_cell) {
+                    hit_surface = true;
                     color = vec4(1);
+                    // This ray has terminated
+                    rays[ray_index].block_id = UINT_MAX;
+                    rays[ray_index].t_next = FLT_MAX;
+                    rays[ray_index].t = FLT_MAX;
                     break;
                 }
 
@@ -116,8 +122,12 @@ void main(void)
                     t_max.z += t_delta.z;
                 }
             }
-            // Update the ray t value for the next iteration of traversing the macrocell grid
-            rays[ray_index].t = t_current;
+            if (!hit_surface) {
+                // Update the ray t value for the next iteration of traversing the macrocell grid
+                // TODO: Precision issue here, should rework how the macrocell traversal continues on
+                // to not rely on the t value
+                rays[ray_index].t = rays[ray_index].t_next + 0.1;
+            }
         }
         imageStore(render_target, pixel_coords, color);
     }
