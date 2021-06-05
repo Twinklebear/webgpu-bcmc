@@ -1091,6 +1091,11 @@ VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks
     // TODO: this can be dispatched using dispatch indirect, build the commands on the GPU
     // so we can avoid reading back the data. Open Q: how to get the dispatch ID so we know
     // which block we're processing?
+    // I think this would have to be passed through a different bindgroup, because each
+    // dispatch indirect will read one set of dispatch info from the buffer
+    // Or some other way to dispatch? Maybe can rework the shader some,
+    // since the other hand is that for high res volumes we'll often have
+    // many blocks covering few pixels, which turns into a ton of dispatches 
     pass.setPipeline(this.raytraceBlocksPipeline);
     pass.setBindGroup(0, rtBlocksPipelineBG0);
     pass.setBindGroup(1, this.rtBlocksPipelineBG1);

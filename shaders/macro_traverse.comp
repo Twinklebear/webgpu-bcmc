@@ -52,11 +52,11 @@ void main() {
 	vec3 transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale.xyz;
     // TODO: the -0.5 shouldn't be here for the macrocell grid
 	vec3 vol_eye = transformed_eye * volume_dims.xyz - vec3(0.5);
-    vec3 grid_ray_dir = normalize(rays[ray_index].ray_dir * volume_dims.xyz);
+    vec3 grid_ray_dir = rays[ray_index].ray_dir;
 
     // Transform to the macrocell grid
     // Note: ray dir is NOT normalized here, because the t values are relative
-    // to the full volumue grid.
+    // to the full volume grid.
     vol_eye *= 0.25;
     grid_ray_dir *= 0.25;
 
@@ -65,9 +65,9 @@ void main() {
     p = clamp(p, vec3(0), vec3(macrogrid_dims - 1));
 
     const vec3 inv_grid_ray_dir = 1.0 / grid_ray_dir;
-    const vec3 start_cell = floor(p);
-    const vec3 t_max_neg = (start_cell - vol_eye) * inv_grid_ray_dir;
-    const vec3 t_max_pos = (start_cell + vec3(1) - vol_eye) * inv_grid_ray_dir;
+    vec3 cell = floor(p);
+    const vec3 t_max_neg = (cell - vol_eye) * inv_grid_ray_dir;
+    const vec3 t_max_pos = (cell + vec3(1) - vol_eye) * inv_grid_ray_dir;
     const bvec3 is_neg_dir = lessThan(grid_ray_dir, vec3(0));
     // Pick between positive/negative t_max based on the ray sign
     vec3 t_max = mix(t_max_pos, t_max_neg, is_neg_dir);
@@ -76,8 +76,8 @@ void main() {
     const vec3 t_delta = abs(inv_grid_ray_dir);
 
     // Traverse the grid 
-    while (!outside_grid(p, macrogrid_dims)) {
-        const ivec3 block_pos = ivec3(p);
+    while (!outside_grid(cell, macrogrid_dims)) {
+        const ivec3 block_pos = ivec3(cell);
 
         uint block_id = block_pos.x + n_blocks.x * (block_pos.y + n_blocks.y * block_pos.z);
         vec2 cell_range = block_ranges[block_id];
@@ -93,13 +93,13 @@ void main() {
 
         // Advance in the grid
         if (t_current == t_max.x) {
-            p.x += grid_step.x;
+            cell.x += grid_step.x;
             t_max.x += t_delta.x;
         } else if (t_current == t_max.y) {
-            p.y += grid_step.y;
+            cell.y += grid_step.y;
             t_max.y += t_delta.y;
         } else {
-            p.z += grid_step.z;
+            cell.z += grid_step.z;
             t_max.z += t_delta.z;
         }
     }
