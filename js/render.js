@@ -293,6 +293,7 @@
         totalTimeMS += end - start;
         fpsDisplay.innerHTML = `Avg. FPS ${Math.round((1000.0 * numFrames) / totalTimeMS)}<br/>
             Avg. pass time: ${averageComputeTime}ms<br/>
+            Pass # ${volumeRC.numPasses}<br/>
             Total pipeline time: ${volumeRC.totalPassTime}`;
     }
 })();
