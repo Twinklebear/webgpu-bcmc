@@ -1033,6 +1033,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     if (numRaysActive != nactive) {
         console.log(`nactive ${nactive} doesn't match numRaysActive ${numRaysActive}!?`);
     }
+    var startCompacts = performance.now();
     // Compact the active ray IDs and their block IDs down
     await this.streamCompact.compactActiveIDs(this.canvas.width * this.canvas.height,
                                               this.rayActiveBuffer,
@@ -1051,6 +1052,8 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
                                               this.blockActiveBuffer,
                                               this.blockActiveCompactOffsetBuffer,
                                               this.activeBlockIDBuffer);
+    var endCompacts = performance.now();
+    console.log(`Ray and block info compaction ${endCompacts - startCompacts}ms`);
 
     var start = performance.now();
     // Sort active ray IDs by their block ID
@@ -1058,7 +1061,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
         this.compactRayBlockIDBuffer, this.rayIDBuffer, numRaysActive, false);
     var end = performance.now();
     console.log(`radix sort ray's by blocks: ${end - start}ms`);
-    console.log(`sortActiveRaysByBlock total: ${end - startFn}ms`);
+    console.log(`sortActiveRaysByBlock fcn total: ${end - startFn}ms`);
 
     /*
     {
