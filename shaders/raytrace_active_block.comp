@@ -255,6 +255,20 @@ void main(void)
                         vec3 hit_p = cell_p + grid_ray_dir * t_hit;
                         //t_hit = length(hit_p - vol_eye);
 
+                        // New Parker et al normal computation
+                        // vec3 N = vec3(0);
+                        // const vec3 v111 = v000 + vec3(1);
+                        // const vec3 a[2] = {v111 - hit_p, hit_p - v000};
+                        // for (int k = 0; k < 2; ++k) {
+                        //     for (int j = 0; j < 2; ++j) {
+                        //         for (int i = 0; i < 2; ++i) {
+                        //             const float val = vertex_values[i + 2 * (j + 2 * k)];
+                        //             N.x += pow(-1, i + 1) * a[j].y * a[k].z * val;
+                        //             N.y += pow(-1, j + 1) * a[i].x * a[k].z * val;
+                        //             N.z += pow(-1, k + 1) * a[i].x * a[j].y * val;
+                        //         }
+                        //     }
+                        // }
                         // TODO: Seems like normal isn't quite smooth?
                         vec3 sample1 = vec3(
                                 trilinear_interpolate_in_cell(hit_p-vec3(0.1, 0, 0), v000, vertex_values), 
@@ -265,14 +279,21 @@ void main(void)
                                 trilinear_interpolate_in_cell(hit_p+vec3(0, 0.1, 0), v000, vertex_values),
                                 trilinear_interpolate_in_cell(hit_p+vec3(0, 0, 0.1), v000, vertex_values));
                         vec3 N = normalize(sample2-sample1);
-                        //vec3 L = normalize(vec3(255,0,200)-grid_ray_dir);
-                        //vec3 V = normalize(vol_eye-grid_ray_dir);
+                        // vec3 L = normalize(vec3(255,0,200)-grid_ray_dir);
+                        // vec3 V = normalize(vol_eye-grid_ray_dir);
                         // Make sure normal faces back along ray 
                         if (dot(N, grid_ray_dir) > 0.0) {
                             N = -N;
                         }
-                        //color.xyz = shading(N, V, L);
+                        // color.xyz = shading(N, V, L);
                         color.xyz = (N + 1.0) * 0.5;
+                        
+                        // Basic non-normal coloring
+                        // t_hit = length(hit_p - vol_eye);
+                        // // Apply some scaling factor so the depth values are within [0, 1]
+                        // // to be displayed as a color. Here I'm just dividing by the volume
+                        // // dimensions to scale it
+                        // color.xyz = ((vec3(t_hit) / length(volume_dims)) - vec3(1)) * vec3(-1);
 
                         // This ray has terminated
                         rays[ray_index].block_id = UINT_MAX;
