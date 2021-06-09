@@ -1,7 +1,7 @@
 // Create the LRU cache and set an initial size for the cache
 // If more data is requested to store in the cache than it can fit, it will
 // be grown to accomadate it
-var LRUCache = function(
+var LRUCache = function (
     device, scanPipeline, streamCompact, initialSize, elementSize, totalElements) {
     this.device = device;
     this.scanPipeline = scanPipeline;
@@ -71,9 +71,9 @@ var LRUCache = function(
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
 
-    // Buffer used to pass the previous cache size to lru_cache_init.comp
+    // Buffer used to pass the previous cache size to lru_cache_init.comp, and cache size and total elements to lru_cache_inputs.comp
     this.cacheSizeBuf = this.device.createBuffer({
-        size: 4,
+        size: 8,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
@@ -112,6 +112,13 @@ var LRUCache = function(
                     type: "storage",
                 }
             },
+            {
+                binding: 3,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "uniform",
+                }
+            }
         ],
     });
 
@@ -136,6 +143,12 @@ var LRUCache = function(
                     buffer: this.slotData,
                 },
             },
+            {
+                binding: 3,
+                resource: {
+                    buffer: this.cacheSizeBuf,
+                },
+            }
         ],
     });
 
@@ -170,35 +183,12 @@ var LRUCache = function(
         ],
     });
 
-    this.cacheInitBGLayout = this.device.createBindGroupLayout({
-        entries: [
-            {
-                binding: 0,
-                visibility: GPUShaderStage.COMPUTE,
-                buffer: {
-                    type: "uniform",
-                }
-            },
-        ],
-    });
-    this.cacheInitBG = this.device.createBindGroup({
-        layout: this.cacheInitBGLayout,
-        entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: this.cacheSizeBuf,
-                },
-            },
-        ],
-    });
-
     this.ageCacheSlotsPipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
             bindGroupLayouts: [this.lruCacheBGLayout],
         }),
         compute: {
-            module: device.createShaderModule({code: lru_cache_age_slots_comp_spv}),
+            module: device.createShaderModule({ code: lru_cache_age_slots_comp_spv }),
             entryPoint: "main",
         },
     });
@@ -217,10 +207,10 @@ var LRUCache = function(
 
     this.cacheInitPipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts: [this.lruCacheBGLayout, this.cacheInitBGLayout],
+            bindGroupLayouts: [this.lruCacheBGLayout],
         }),
         compute: {
-            module: device.createShaderModule({code: lru_cache_init_comp_spv}),
+            module: device.createShaderModule({ code: lru_cache_init_comp_spv }),
             entryPoint: "main",
         },
     });
@@ -230,7 +220,7 @@ var LRUCache = function(
             bindGroupLayouts: [this.lruCacheBGLayout, this.cacheUpdateBGLayout],
         }),
         compute: {
-            module: device.createShaderModule({code: lru_cache_update_comp_spv}),
+            module: device.createShaderModule({ code: lru_cache_update_comp_spv }),
             entryPoint: "main",
         },
     });
@@ -285,7 +275,7 @@ var LRUCache = function(
 // regardless of whether they are currently cached.
 // Returns the number of new items which need to be decompressed
 // and their IDs
-LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
+LRUCache.prototype.update = async function (itemNeeded, perfTracker) {
     // TODO WILL: This should also manage the decompression step too,
     // it makes more sense for it to be managed by the cache
     if (!(itemNeeded instanceof GPUBuffer)) {
@@ -326,13 +316,15 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         ],
     });
 
-    // Update the old cache size UBO so we know where to start initializing the data
+    // Update the old cache size UBO so we know where to start initializing the data, along with total elements
     var uploadBuf = this.device.createBuffer({
-        size: 4,
+        size: 8,
         usage: GPUBufferUsage.COPY_SRC,
         mappedAtCreation: true,
     });
-    new Uint32Array(uploadBuf.getMappedRange()).set([this.cacheSize]);
+    var uploadArray = new Uint32Array(uploadBuf.getMappedRange());
+    uploadArray.set([this.cacheSize]);
+    uploadArray.set([this.totalElements], 1)
     uploadBuf.unmap();
 
     var start = performance.now();
@@ -340,19 +332,19 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     // and are in the cache to unmark them, and which items no longer need
     // caching but are in the cache with age > 2 to mark their slot available.
     var commandEncoder = this.device.createCommandEncoder();
-    commandEncoder.copyBufferToBuffer(uploadBuf, 0, this.cacheSizeBuf, 0, 4);
+    commandEncoder.copyBufferToBuffer(uploadBuf, 0, this.cacheSizeBuf, 0, 8);
 
     var pass = commandEncoder.beginComputePass();
 
     // Age all slots in the cache
     pass.setPipeline(this.ageCacheSlotsPipeline);
     pass.setBindGroup(0, this.lruCacheBG);
-    pass.dispatch(this.cacheSize, 1, 1);
+    pass.dispatch(this.cacheSize / 32, 1, 1);
 
     pass.setPipeline(this.markNewItemsPipeline);
     pass.setBindGroup(0, this.lruCacheBG);
     pass.setBindGroup(1, markNewItemsBG);
-    pass.dispatch(this.totalElements, 1, 1);
+    pass.dispatch(this.totalElements / 32, 1, 1);
 
     // We need a kernel to copy the slotAvailable member out of the structs instead of using
     // copyBufferToBuffer, since it's stored AoS to reduce our buffer use
@@ -443,7 +435,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
 
         var newSize =
             Math.min(this.cacheSize + Math.ceil((numNewItems - numSlotsAvailable) * 1.5),
-                     this.totalElements);
+                this.totalElements);
 
         var slotData = this.device.createBuffer({
             size: newSize * 4 * 3,
@@ -486,6 +478,12 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
                         buffer: slotData,
                     },
                 },
+                {
+                    binding: 3,
+                    resource: {
+                        buffer: this.cacheSizeBuf,
+                    }
+                }
             ],
         });
 
@@ -505,7 +503,6 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.cacheInitPipeline);
         pass.setBindGroup(0, this.lruCacheBG);
-        pass.setBindGroup(1, this.cacheInitBG);
         pass.dispatch(newSize - this.cacheSize, 1, 1);
         pass.endPass();
 
@@ -594,9 +591,9 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     await this.device.queue.onSubmittedWorkDone();
 
     await this.streamCompact.compactActiveIDs(this.cacheSize,
-                                              this.slotAvailableForCompact,
-                                              this.slotAvailableOffsets,
-                                              this.slotAvailableIDs);
+        this.slotAvailableForCompact,
+        this.slotAvailableOffsets,
+        this.slotAvailableIDs);
     var end = performance.now();
     console.log(`num Available ${numSlotsAvailable}`);
     console.log(`cache size ${this.cacheSize}`);
@@ -670,6 +667,12 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
                     buffer: this.slotData,
                 },
             },
+            {
+                binding: 3,
+                resource: {
+                    buffer: this.cacheSizeBuf,
+                }
+            }
         ],
     });
 
@@ -710,7 +713,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
 };
 
 // Reset the cache to clear items and force them to be decompressed again for benchmarking
-LRUCache.prototype.reset = async function() {
+LRUCache.prototype.reset = async function () {
     // We just run the same init pipeline used when we grow the cache but
     // just say the cache size is 0 when we run it to clear the whole thing
     var uploadBuf = this.device.createBuffer({
@@ -726,7 +729,6 @@ LRUCache.prototype.reset = async function() {
     var pass = commandEncoder.beginComputePass();
     pass.setPipeline(this.cacheInitPipeline);
     pass.setBindGroup(0, this.lruCacheBG);
-    pass.setBindGroup(1, this.cacheInitBG);
     pass.dispatch(this.cacheSize, 1, 1);
     pass.endPass();
 

@@ -2,11 +2,11 @@
 
 #include "lru_cache_inputs.comp"
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 void main(void)
 {
-    slot_data[gl_GlobalInvocationID.x].age += 1;
+    if (gl_GlobalInvocationID.x < cache_size) {
+        slot_data[gl_GlobalInvocationID.x].age += 1;
+    }
 }
-
-
