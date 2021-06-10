@@ -863,12 +863,15 @@ VolumeRaycaster.prototype.renderSurface =
     start = performance.now();
     var [nBlocksToDecompress, decompressBlockIDs] =
         await this.lruCache.update(this.blockActiveBuffer, perfTracker);
+    end = performance.now();
+    console.log(`LRU: ${end - start}ms`);
     if (nBlocksToDecompress != 0) {
         console.log(`Will decompress ${nBlocksToDecompress} blocks`);
+        start = performance.now();
         await this.decompressBlocks(nBlocksToDecompress, decompressBlockIDs);
+        end = performance.now();
+        console.log(`Decompress: ${end - start}ms`);
     }
-    end = performance.now();
-    console.log(`LRU and Decompress: ${end - start}ms`);
 
     start = performance.now();
     var numRaysActive = await this.computeBlockRayOffsets();
@@ -999,8 +1002,6 @@ VolumeRaycaster.prototype.computeBlockRayOffsets = async function() {
 // Sort the active ray IDs by their block ID in ascending order (inactive rays will be at the
 // end).
 VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) {
-    var startFn = performance.now();
-
     // Populate the ray ID, ray block ID and ray active buffers
     var commandEncoder = this.device.createCommandEncoder();
     var pass = commandEncoder.beginComputePass()
@@ -1053,15 +1054,14 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
                                               this.blockActiveCompactOffsetBuffer,
                                               this.activeBlockIDBuffer);
     var endCompacts = performance.now();
-    console.log(`Ray and block info compaction ${endCompacts - startCompacts}ms`);
+    console.log(`sortActiveRaysByBlock: Compacts ${endCompacts - startCompacts}ms`);
 
     var start = performance.now();
     // Sort active ray IDs by their block ID
     await this.radixSorter.sort(
         this.compactRayBlockIDBuffer, this.rayIDBuffer, numRaysActive, false);
     var end = performance.now();
-    console.log(`radix sort ray's by blocks: ${end - start}ms`);
-    console.log(`sortActiveRaysByBlock fcn total: ${end - startFn}ms`);
+    console.log(`sortActiveRaysByBlock: Sort rays by blocks: ${end - start}ms`);
 
     /*
     {
