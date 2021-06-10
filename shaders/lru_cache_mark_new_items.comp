@@ -2,7 +2,6 @@
 
 #include "lru_cache_inputs.comp"
 
-// TODO: can use a larger thread group size
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 1, binding = 0, std430) readonly buffer ItemNeeded
@@ -19,7 +18,7 @@ layout(set = 1, binding = 1, std430) buffer ItemNeedsCaching
 
 void main(void)
 {
-    if (gl_GlobalInvocationID.x < cache_size) {
+    if (gl_GlobalInvocationID.x < total_elements) {
         const int slot = cached_item_slot[gl_GlobalInvocationID.x];
         if (slot >= 0) {
             item_needs_caching[gl_GlobalInvocationID.x] = 0;
