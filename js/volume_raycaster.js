@@ -572,12 +572,13 @@ VolumeRaycaster.prototype.setCompressedVolume =
     const groupThreadCount = 32;
     this.numWorkGroups = Math.ceil(this.totalBlocks / groupThreadCount);
     console.log(`num work groups ${this.numWorkGroups}`);
-    console.log(`Cache initial size: ${Math.ceil(this.totalBlocks * 0.05)}`);
+    var cacheInitialSize = Math.ceil(this.totalBlocks * 0.05);
+    console.log(`Cache initial size: ${cacheInitialSize}`);
 
     this.lruCache = new LRUCache(this.device,
                                  this.scanPipeline,
                                  this.streamCompact,
-                                 Math.ceil(this.totalBlocks * 0.05),
+                                 cacheInitialSize,
                                  64 * 4,
                                  this.totalBlocks);
 
