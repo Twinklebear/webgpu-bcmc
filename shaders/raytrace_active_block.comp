@@ -169,6 +169,12 @@ void main(void)
             const uint ray_index = ray_ids[block_info.ray_offset + ray_id];
             pixel_coords = ivec2(ray_id_to_pos(ray_index));
 
+            // Test just coloring by block id for first pass
+            // color.xyz = normalize(vec3(block_info.id));
+            // rays[ray_index].block_id = UINT_MAX;
+            // rays[ray_index].t_next = FLT_MAX;
+            // rays[ray_index].t = FLT_MAX;
+
             vec3 grid_ray_dir = rays[ray_index].ray_dir;
 
             float t_prev = rays[ray_index].t;
@@ -270,7 +276,7 @@ void main(void)
                                 }
                             }
                         }
-                        // TODO: Seems like normal isn't quite smooth?
+                        // Old normal calculation
                         // vec3 sample1 = vec3(
                         //         trilinear_interpolate_in_cell(hit_p-vec3(0.1, 0, 0), v000, vertex_values), 
                         //         trilinear_interpolate_in_cell(hit_p-vec3(0, 0.1, 0), v000, vertex_values),
@@ -324,7 +330,7 @@ void main(void)
                 // Update the ray t value for the next iteration of traversing the macrocell grid
                 // TODO: Precision issue here, should rework how the macrocell traversal continues on
                 // to not rely on the t value
-                rays[ray_index].t = rays[ray_index].t_next + 0.001;
+                rays[ray_index].t = rays[ray_index].t_next + 0.01;
             }
         }
         imageStore(render_target, pixel_coords, color);
