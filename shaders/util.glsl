@@ -16,6 +16,11 @@ struct RayInfo {
     // So we have a free 4 byte value to use if needed.
 };
 
+struct BlockRange {
+    vec2 range;
+    float corners[8];
+};
+
 struct BlockInfo {
     uint id;
     uint ray_offset;

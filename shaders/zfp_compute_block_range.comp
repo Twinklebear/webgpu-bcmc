@@ -3,12 +3,13 @@
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 #include "zfp_decompress.comp"
+#include "util.glsl"
 
 // Note: This could really be done by the file format or server ahead of time,
 // instead of having the client do a preprocess to compute these ranges
-layout(set = 0, binding = 2, std430) buffer BlockRanges
+layout(set = 0, binding = 2, std430) buffer BlockInformation
 {
-    vec2 block_ranges[];
+    BlockRange block_ranges[];
 };
 
 void main(void)
@@ -44,6 +45,16 @@ void main(void)
     uvec3 partial_size = uvec3(partial.x ? volume_dims.x - block.x : 4,
             partial.y ? volume_dims.y - block.y : 4,
             partial.z ? volume_dims.z - block.z : 4);
+    float corners[8];
+    corners[0] = decompressed_block[0];
+    corners[1] = decompressed_block[partial_size.x - 1];
+    corners[2] = decompressed_block[(partial_size.y - 1) * partial_size.x];
+    corners[3] = decompressed_block[partial_size.y * partial_size.x - 1];
+    corners[4] = decompressed_block[(partial_size.z - 1) * (partial_size.y * partial_size.x)];
+    corners[5] = decompressed_block[(partial_size.z - 1) * (partial_size.y * partial_size.x) + (partial_size.x - 1)];
+    corners[6] = decompressed_block[(partial_size.z - 1) * (partial_size.y * partial_size.x) + ((partial_size.y - 1) * partial_size.x)];
+    corners[7] = decompressed_block[partial_size.z * partial_size.y * partial_size.x - 1];
+    block_ranges[block_index].corners = corners;
     for (uint z = 0; z < partial_size.z; ++z) {
         for (uint y = 0; y < partial_size.y; ++y) {
             for (uint x = 0; x < partial_size.x; ++x) {
@@ -52,7 +63,5 @@ void main(void)
             }
         }
     }
-    block_ranges[block_index] = block_range;
+    block_ranges[block_index].range = block_range;
 }
-
-
