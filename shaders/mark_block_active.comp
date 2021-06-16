@@ -30,6 +30,11 @@ layout(set = 0, binding = 3, std430) buffer RayInformation
     RayInfo rays[];
 };
 
+layout(set = 0, binding = 4, std430) buffer BlockVisible
+{
+    uint block_visible[];
+};
+
 uvec3 block_id_to_pos(uint id)
 {
     uvec3 n_blocks = padded_dims.xyz / uvec3(4);

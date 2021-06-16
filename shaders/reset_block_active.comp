@@ -16,6 +16,11 @@ layout(set = 0, binding = 1, std430) buffer BlockActive
     uint block_active[];
 };
 
+layout(set = 0, binding = 2, std430) buffer BlockVisible
+{
+    uint block_visible[];
+};
+
 // Resetting the blocks active flag is split to a separate stage so that we
 // don't have a read-write conflict where some threads try to mark it active
 // while another is resetting it to inactive

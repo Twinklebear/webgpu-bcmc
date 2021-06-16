@@ -311,7 +311,8 @@ var VolumeRaycaster = function (device, canvas) {
     this.resetBlockActiveBGLayout = device.createBindGroupLayout({
         entries: [
             { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
-            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }
+            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+            { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }
         ]
     });
     this.resetBlockActivePipeline = device.createComputePipeline({
@@ -323,10 +324,15 @@ var VolumeRaycaster = function (device, canvas) {
         }
     });
 
-    // These could even use the same shader and pipeline, just swap out the bind group
+    this.resetBlockNumRaysBGLayout = device.createBindGroupLayout({
+        entries: [
+            { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+            { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }
+        ]
+    });
     this.resetBlockNumRaysPipeline = device.createComputePipeline({
         layout:
-            device.createPipelineLayout({ bindGroupLayouts: [this.resetBlockActiveBGLayout] }),
+            device.createPipelineLayout({ bindGroupLayouts: [this.resetBlockNumRaysBGLayout] }),
         compute: {
             module: device.createShaderModule({ code: reset_block_num_rays_comp_spv }),
             entryPoint: "main"
@@ -338,7 +344,8 @@ var VolumeRaycaster = function (device, canvas) {
             { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
             { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
             { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-            { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }
+            { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+            { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }
         ]
     });
     this.markBlockActivePipeline = device.createComputePipeline({
@@ -621,6 +628,9 @@ VolumeRaycaster.prototype.setCompressedVolume =
         this.blockActiveBuffer = this.device.createBuffer(
             { size: 4 * this.totalBlocks, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
 
+        this.blockVisibleBuffer = this.device.createBuffer(
+            { size: 4 * this.totalBlocks, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+
         this.blockNumRaysBuffer = this.device.createBuffer(
             { size: 4 * this.totalBlocks, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
 
@@ -717,11 +727,12 @@ VolumeRaycaster.prototype.setCompressedVolume =
             layout: this.resetBlockActiveBGLayout,
             entries: [
                 { binding: 0, resource: { buffer: this.volumeInfoBuffer } },
-                { binding: 1, resource: { buffer: this.blockActiveBuffer } }
+                { binding: 1, resource: { buffer: this.blockActiveBuffer } },
+                { binding: 2, resource: { buffer: this.blockVisibleBuffer } },
             ]
         });
         this.resetBlockNumRaysBG = this.device.createBindGroup({
-            layout: this.resetBlockActiveBGLayout,
+            layout: this.resetBlockNumRaysBGLayout,
             entries: [
                 { binding: 0, resource: { buffer: this.volumeInfoBuffer } },
                 { binding: 1, resource: { buffer: this.blockNumRaysBuffer } }
@@ -734,7 +745,8 @@ VolumeRaycaster.prototype.setCompressedVolume =
                 { binding: 0, resource: { buffer: this.volumeInfoBuffer } },
                 { binding: 1, resource: { buffer: this.blockActiveBuffer } },
                 { binding: 2, resource: { buffer: this.blockNumRaysBuffer } },
-                { binding: 3, resource: { buffer: this.rayInformationBuffer } }
+                { binding: 3, resource: { buffer: this.rayInformationBuffer } },
+                { binding: 4, resource: { buffer: this.blockVisibleBuffer } },
             ]
         });
 
