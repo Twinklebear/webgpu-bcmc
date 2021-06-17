@@ -339,13 +339,19 @@ var VolumeRaycaster = function (device, canvas) {
         }
     });
 
+    this.LODThresholdBuf = device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
     this.markBlockActiveBGLayout = device.createBindGroupLayout({
         entries: [
             { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
             { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
             { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
             { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
-            { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }
+            { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+            { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
         ]
     });
     this.markBlockActivePipeline = device.createComputePipeline({
@@ -555,6 +561,13 @@ var VolumeRaycaster = function (device, canvas) {
                     type: "storage",
                 }
             },
+            {
+                binding: 6,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "uniform",
+                }
+            },
         ]
     });
 
@@ -626,6 +639,11 @@ VolumeRaycaster.prototype.setCompressedVolume =
         this.compressedDataSize = volume.byteLength;
 
         this.uploadIsovalueBuf = this.device.createBuffer({
+            size: 4,
+            usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
+        });
+
+        this.uploadLODBuf = this.device.createBuffer({
             size: 4,
             usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
         });
@@ -754,6 +772,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
                 { binding: 2, resource: { buffer: this.blockNumRaysBuffer } },
                 { binding: 3, resource: { buffer: this.rayInformationBuffer } },
                 { binding: 4, resource: { buffer: this.blockVisibleBuffer } },
+                { binding: 5, resource: { buffer: this.LODThresholdBuf } },
             ]
         });
 
@@ -788,7 +807,8 @@ VolumeRaycaster.prototype.setCompressedVolume =
                 { binding: 2, resource: { buffer: this.rayIDBuffer } },
                 { binding: 3, resource: { buffer: this.combinedBlockInformationBuffer } },
                 { binding: 4, resource: this.renderTarget.createView() },
-                { binding: 5, resource: { buffer: this.blockRangesBuffer } }
+                { binding: 5, resource: { buffer: this.blockRangesBuffer } },
+                { binding: 6, resource: { buffer: this.LODThresholdBuf } },
             ]
         });
     };
@@ -840,7 +860,7 @@ VolumeRaycaster.prototype.computeBlockRanges = async function () {
 
 // Progressively compute the surface, returns true when rendering is complete
 VolumeRaycaster.prototype.renderSurface =
-    async function (isovalue, viewParamUpload, perfTracker, renderParamsChanged) {
+    async function (isovalue, LODThreshold, viewParamUpload, perfTracker, renderParamsChanged) {
         if (this.renderComplete && !renderParamsChanged) {
             return this.renderComplete;
         }
@@ -852,8 +872,14 @@ VolumeRaycaster.prototype.renderSurface =
             new Float32Array(this.uploadIsovalueBuf.getMappedRange()).set([isovalue]);
             this.uploadIsovalueBuf.unmap();
 
-            // Reset active blocks for the new viewpoint/isovalue to allow eviction of old blocks
+            // Upload new LOD threshold
             var commandEncoder = this.device.createCommandEncoder();
+            await this.uploadLODBuf.mapAsync(GPUMapMode.WRITE);
+            new Uint32Array(this.uploadLODBuf.getMappedRange()).set([LODThreshold]);
+            this.uploadLODBuf.unmap();
+            commandEncoder.copyBufferToBuffer(this.uploadLODBuf, 0, this.LODThresholdBuf, 0, 4);
+
+            // Reset active blocks for the new viewpoint/isovalue to allow eviction of old blocks
             var pass = commandEncoder.beginComputePass();
             pass.setPipeline(this.resetBlockActivePipeline);
             pass.setBindGroup(0, this.resetBlockActiveBG);

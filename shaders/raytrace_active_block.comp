@@ -31,6 +31,10 @@ layout(set = 1, binding = 5, std430) buffer BlockRanges
     BlockRange block_ranges[];
 };
 
+layout(set = 1, binding = 6) uniform LOD {
+    uint LOD_threshold;
+};
+
 uniform layout(set = 1, binding = 4, rgba8) writeonly image2D render_target;
 
 shared BlockInfo block_info;
@@ -142,14 +146,22 @@ void main(void)
     if (block_info.num_rays == 0) { 
         return;
     }
+    bool LOD = block_info.num_rays < LOD_threshold;
+    const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+
     const uvec3 block_dims = load_block(block_info.id);
     // Block position in voxels
     const uvec3 block_pos = block_id_to_pos(block_info.id) * 4;
 
     vec3 volume_translation = vec3(0) - volume_scale.xyz * 0.5;
     vec3 transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale.xyz;
+
     // Transform eye into the volume space, and then the block space 
     vec3 vol_eye = transformed_eye * volume_dims.xyz - vec3(0.5) - block_pos;
+    if (LOD) {
+        vol_eye = transformed_eye * volume_dims.xyz - vec3(0.5);
+    }
+
 
     // Process all the rays for this block in parallel, each thread takes one ray
     // so we can do 64 rays at a time. For cases where a block projects to a lot more
@@ -182,6 +194,14 @@ void main(void)
 
             vec3 grid_ray_dir = rays[ray_index].ray_dir;
 
+            if (LOD) {
+                // Transform to the macrocell grid
+                // Note: ray dir is NOT normalized here, because the t values are relative
+                // to the full volume grid.
+                vol_eye *= 0.25;
+                grid_ray_dir *= 0.25;
+            }
+
             float t_prev = rays[ray_index].t;
             vec3 p = (vol_eye + t_prev * grid_ray_dir);
             p = clamp(p, vec3(0), vec3(block_dims - 2));
@@ -204,14 +224,34 @@ void main(void)
             while (!outside_dual_grid(cell, vec3(block_dims))) {
                 const ivec3 v000 = ivec3(cell);
 
-                // For when we are past the LOD_threshold and want full accuracy
-                // compute_vertex_values(v000, block_dims, vertex_values, cell_range);
-
-                // For lower than LOD_threshold
-                for (int x = 0; x < 8; ++x) {
-                    vertex_values[x] = block_ranges[block_info.id].corners[x];
+                if (LOD) {
+                    // For lower than LOD_threshold
+                    for (int x = 0; x < 8; ++x) {
+                        vertex_values[x] = block_ranges[block_info.id].corners[x];
+                    }
+                    cell_range = block_ranges[block_info.id].range;
+                    for (int k = 0; k < 2; ++k) {
+                        for (int j = 0; j < 2; ++j) {
+                            for (int i = 0; i < 2; ++i) {
+                                const uvec3 neighbor = uvec3(i, j, k); 
+                                const uvec3 coords = v000 + neighbor;
+                                if (neighbor == uvec3(0) || any(lessThan(coords, uvec3(0)))
+                                        || any(greaterThanEqual(coords, n_blocks)))
+                                {
+                                    continue;
+                                }
+                                // TODO: use fcn
+                                const uint neighbor_id = coords.x + n_blocks.x * (coords.y + n_blocks.y * coords.z);
+                                cell_range.x = min(block_ranges[neighbor_id].range.x, cell_range.x);
+                                cell_range.y = max(block_ranges[neighbor_id].range.y, cell_range.y);
+                            }
+                        }
+                    }
+                } else {
+                    // For when we are past the LOD_threshold and want full accuracy
+                    compute_vertex_values(v000, block_dims, vertex_values, cell_range);
                 }
-                cell_range = block_ranges[block_info.id].range;
+
 
                 const float t_next = min(t_max.x, min(t_max.y, t_max.z));
                 const bool skip_cell = isovalue < cell_range.x || isovalue > cell_range.y;

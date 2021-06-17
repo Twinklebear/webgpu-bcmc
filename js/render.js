@@ -6,7 +6,7 @@
     var canvas = document.getElementById("webgpu-canvas");
     var context = canvas.getContext("gpupresent");
 
-    var dataset = datasets.skull;
+    var dataset = datasets.miranda;
     if (window.location.hash) {
         var name = decodeURI(window.location.hash.substr(1));
         console.log(`Linked to data set ${name}`);
@@ -23,7 +23,7 @@
         volumeURL = "/models/" + zfpDataName;
     }
     var compressedData =
-        await fetch(volumeURL).then((res) => res.arrayBuffer().then(function(arr) {
+        await fetch(volumeURL).then((res) => res.arrayBuffer().then(function (arr) {
             return new Uint8Array(arr);
         }));
 
@@ -45,6 +45,9 @@
 
     var enableCache = document.getElementById("enableCache");
     enableCache.checked = true;
+
+    var LODSlider = document.getElementById("lod");
+    var currentLOD = LODSlider.value;
 
     var isovalueSlider = document.getElementById("isovalue");
     isovalueSlider.min = dataset.range[0];
@@ -79,7 +82,7 @@
     var cameraChanged = true;
 
     var controller = new Controller();
-    controller.mousemove = function(prev, cur, evt) {
+    controller.mousemove = function (prev, cur, evt) {
         if (evt.buttons == 1) {
             cameraChanged = true;
             camera.rotate(prev, cur);
@@ -92,14 +95,14 @@
             totalTimeMS = 0;
         }
     };
-    controller.wheel = function(amt) {
+    controller.wheel = function (amt) {
         cameraChanged = true;
         camera.zoom(amt * 0.05);
         numFrames = 0;
         totalTimeMS = 0;
     };
     controller.pinch = controller.wheel;
-    controller.twoFingerDrag = function(drag) {
+    controller.twoFingerDrag = function (drag) {
         cameraChanged = true;
         camera.pan(drag);
         numFrames = 0;
@@ -107,7 +110,7 @@
     };
     controller.registerForCanvas(canvas);
 
-    var animationFrame = function() {
+    var animationFrame = function () {
         var resolve = null;
         var promise = new Promise((r) => (resolve = r));
         window.requestAnimationFrame(resolve);
@@ -132,34 +135,34 @@
         usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
 
-    var vertModule = device.createShaderModule({code: display_render_vert_spv});
-    var fragModule = device.createShaderModule({code: display_render_frag_spv});
+    var vertModule = device.createShaderModule({ code: display_render_vert_spv });
+    var fragModule = device.createShaderModule({ code: display_render_frag_spv });
 
     var renderBGLayout = device.createBindGroupLayout({
         entries: [{
             binding: 0,
             visibility: GPUShaderStage.FRAGMENT,
-            storageTexture: {access: "read-only", format: "rgba8unorm"}
+            storageTexture: { access: "read-only", format: "rgba8unorm" }
         }]
     });
 
     var renderPipeline = device.createRenderPipeline({
-        layout: device.createPipelineLayout({bindGroupLayouts: [renderBGLayout]}),
+        layout: device.createPipelineLayout({ bindGroupLayouts: [renderBGLayout] }),
         vertex: {
             module: vertModule,
             entryPoint: "main",
         },
         fragment:
-            {module: fragModule, entryPoint: "main", targets: [{format: swapChainFormat}]}
+            { module: fragModule, entryPoint: "main", targets: [{ format: swapChainFormat }] }
     });
 
     var renderPipelineBG = device.createBindGroup({
         layout: renderBGLayout,
-        entries: [{binding: 0, resource: volumeRC.renderTarget.createView()}]
+        entries: [{ binding: 0, resource: volumeRC.renderTarget.createView() }]
     });
 
     var renderPassDesc = {
-        colorAttachments: [{attachment: undefined, loadValue: [0.3, 0.3, 0.3, 1]}],
+        colorAttachments: [{ attachment: undefined, loadValue: [0.3, 0.3, 0.3, 1] }],
     };
 
     var currentBenchmark = null;
@@ -231,9 +234,10 @@
             await volumeRC.lruCache.reset();
         }
 
-        if (isovalueSlider.value != currentIsovalue || requestRecompute) {
+        if (isovalueSlider.value != currentIsovalue || LODSlider.value != currentLOD || requestRecompute) {
             recomputeSurface = true;
             currentIsovalue = parseFloat(isovalueSlider.value);
+            currentLOD = parseInt(LODSlider.value);
 
             /*
             perfResults.isovalue.push(currentIsovalue);
@@ -267,7 +271,7 @@
             var perfTracker = {};
             var start = performance.now();
             surfaceDone = await volumeRC.renderSurface(
-                currentIsovalue, upload, perfTracker, recomputeSurface);
+                currentIsovalue, currentLOD, upload, perfTracker, recomputeSurface);
             var end = performance.now();
             averageComputeTime = Math.round(volumeRC.totalPassTime / volumeRC.numPasses);
             recomputeSurface = false;
