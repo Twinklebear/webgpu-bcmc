@@ -547,7 +547,14 @@ var VolumeRaycaster = function (device, canvas) {
                 binding: 4,
                 visibility: GPUShaderStage.COMPUTE,
                 storageTexture: { access: "write-only", format: renderTargetFormat }
-            }
+            },
+            {
+                binding: 5,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
+            },
         ]
     });
 
@@ -780,7 +787,8 @@ VolumeRaycaster.prototype.setCompressedVolume =
                 { binding: 1, resource: { buffer: this.rayInformationBuffer } },
                 { binding: 2, resource: { buffer: this.rayIDBuffer } },
                 { binding: 3, resource: { buffer: this.combinedBlockInformationBuffer } },
-                { binding: 4, resource: this.renderTarget.createView() }
+                { binding: 4, resource: this.renderTarget.createView() },
+                { binding: 5, resource: { buffer: this.blockRangesBuffer } }
             ]
         });
     };
@@ -1033,7 +1041,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function (numRaysActive)
     // We also scan the active block buffer to produce offsets for compacting active block IDs
     // down This will let us reduce the dispatch size of the ray tracing step to just active
     // blocks
-    commandEncoder.copyBufferToBuffer(this.blockActiveBuffer,
+    commandEncoder.copyBufferToBuffer(this.blockVisibleBuffer,
         0,
         this.blockActiveCompactOffsetBuffer,
         0,
@@ -1063,7 +1071,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function (numRaysActive)
     // Compact the active block IDs down as well
     var numActiveBlocks = await this.scanBlockActiveOffsets.scan(this.totalBlocks);
     await this.streamCompact.compactActiveIDs(this.totalBlocks,
-        this.blockActiveBuffer,
+        this.blockVisibleBuffer,
         this.blockActiveCompactOffsetBuffer,
         this.activeBlockIDBuffer);
     var endCompacts = performance.now();

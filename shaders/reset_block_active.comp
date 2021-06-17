@@ -31,5 +31,6 @@ void main(void)
         * (gl_GlobalInvocationID.y + n_blocks.y * gl_GlobalInvocationID.z);
 
     block_active[block_id] = 0;
+    block_visible[block_id] = 0;
 }
 

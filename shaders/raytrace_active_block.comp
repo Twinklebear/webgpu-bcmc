@@ -26,6 +26,11 @@ layout(set = 1, binding = 3, std430) buffer BlockInformation
     BlockInfo blocks[];
 };
 
+layout(set = 1, binding = 5, std430) buffer BlockRanges
+{
+    BlockRange block_ranges[];
+};
+
 uniform layout(set = 1, binding = 4, rgba8) writeonly image2D render_target;
 
 shared BlockInfo block_info;
@@ -198,12 +203,19 @@ void main(void)
             bool hit_surface = false;
             while (!outside_dual_grid(cell, vec3(block_dims))) {
                 const ivec3 v000 = ivec3(cell);
-                compute_vertex_values(v000, block_dims, vertex_values, cell_range);
+
+                // For when we are past the LOD_threshold and want full accuracy
+                // compute_vertex_values(v000, block_dims, vertex_values, cell_range);
+
+                // For lower than LOD_threshold
+                for (int x = 0; x < 8; ++x) {
+                    vertex_values[x] = block_ranges[block_info.id].corners[x];
+                }
+                cell_range = block_ranges[block_info.id].range;
 
                 const float t_next = min(t_max.x, min(t_max.y, t_max.z));
                 const bool skip_cell = isovalue < cell_range.x || isovalue > cell_range.y;
 
-                // TODO: intersect isosurface, right now for initial testing just mark the cell
                 if (!skip_cell) {
                     // The text seems to not say explicitly, but I think it is required to have
                     // the ray "origin" within the cell for the cell-local coordinates for a to
@@ -246,7 +258,7 @@ void main(void)
                         hit_surface = true;
 
                         // Find the intersection via repeated linear interpolation
-                        for (int i = 0; i < 10; i++) {
+                        for (int i = 0; i < 10; ++i) {
                             float t = t_in + (t_out - t_in) * (-f_in) / (f_out - f_in);
                             float f_t = evaluate_polynomial(poly, t);
                             if (sign(f_t) == sign(f_in)) {

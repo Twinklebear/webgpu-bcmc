@@ -1,6 +1,7 @@
 #version 450 core
 
 #include "util.glsl"
+#define LRU_threshold uint(10)
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
@@ -61,10 +62,11 @@ void main(void)
 
     // May need to become an atomic or? I don't think it should
     // be an issue but let's see
-    block_active[block_id] = 1;
+    //block_active[block_id] = 1;
+    block_visible[block_id] = 1;
 
     // Count this ray for the block
-    atomicAdd(block_num_rays[block_id], 1);
+    uint num_rays = atomicAdd(block_num_rays[block_id], 1) + 1;
 
     const uvec3 block_pos = block_id_to_pos(block_id);
 
@@ -84,7 +86,8 @@ void main(void)
                 const uint neighbor_id = compute_block_id(coords);
                 // May need to become an atomic or? I don't think it should
                 // be an issue but let's see
-                block_active[neighbor_id] = 1;
+                //block_active[neighbor_id] = 1;
+                block_visible[neighbor_id] = 1;
             }
         }
     }
