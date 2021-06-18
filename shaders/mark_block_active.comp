@@ -79,23 +79,22 @@ void main(void)
     // Mark this ray's block's neighbors to the positive side as active
     // These blocks must be decompressed for neighbor data, but this ray
     // doesn't need to process them.
-    for (int k = 0; k < 2; ++k) {
-        for (int j = 0; j < 2; ++j) {
-            for (int i = 0; i < 2; ++i) {
-                const uvec3 neighbor = uvec3(i, j, k); 
-                const uvec3 coords = block_pos + neighbor;
-                if (neighbor == uvec3(0) || any(lessThan(coords, uvec3(0)))
-                        || any(greaterThanEqual(coords, n_blocks)))
-                {
-                    continue;
-                }
-                const uint neighbor_id = compute_block_id(coords);
-                // May need to become an atomic or? I don't think it should
-                // be an issue but let's see
-                if (num_rays >= LOD_threshold) {
+    if (num_rays >= LOD_threshold) {
+        for (int k = 0; k < 2; ++k) {
+            for (int j = 0; j < 2; ++j) {
+                for (int i = 0; i < 2; ++i) {
+                    const uvec3 neighbor = uvec3(i, j, k); 
+                    const uvec3 coords = block_pos + neighbor;
+                    if (neighbor == uvec3(0) || any(lessThan(coords, uvec3(0)))
+                            || any(greaterThanEqual(coords, n_blocks)))
+                    {
+                        continue;
+                    }
+                    const uint neighbor_id = compute_block_id(coords);
+                    // May need to become an atomic or? I don't think it should
+                    // be an issue but let's see
                     block_active[neighbor_id] = 1;
                 }               
-                block_visible[neighbor_id] = 1;
             }
         }
     }
