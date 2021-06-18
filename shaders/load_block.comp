@@ -232,3 +232,4 @@ uvec3 load_block(const uint block_id)
     barrier();
     return block_dims;
 }
+

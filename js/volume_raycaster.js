@@ -250,7 +250,7 @@ var VolumeRaycaster = function (device, canvas) {
         colorAttachments: [
             {
                 view: this.renderTarget.createView(),
-                loadValue: [0.3, 0.3, 0.3, 1],
+                loadValue: [1.0, 1.0, 1.0, 1],
             },
         ]
     };
@@ -867,6 +867,7 @@ VolumeRaycaster.prototype.renderSurface =
         console.log("===== Rendering Surface =======");
 
         if (renderParamsChanged) {
+            console.log(`Render params changed, LOD: ${LODThreshold}`);
             // Upload the isovalue
             await this.uploadIsovalueBuf.mapAsync(GPUMapMode.WRITE);
             new Float32Array(this.uploadIsovalueBuf.getMappedRange()).set([isovalue]);

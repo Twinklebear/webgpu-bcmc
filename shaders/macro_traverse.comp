@@ -48,7 +48,6 @@ void main() {
     // Transform the ray into the dual grid space
     vec3 volume_translation = vec3(0) - volume_scale.xyz * 0.5;
 	vec3 transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale.xyz;
-    // TODO: the -0.5 shouldn't be here for the macrocell grid
 	vec3 vol_eye = transformed_eye * volume_dims.xyz - vec3(0.5);
     vec3 grid_ray_dir = rays[ray_index].ray_dir;
 
@@ -126,7 +125,7 @@ void main() {
     }
     rays[ray_index].block_id = UINT_MAX;
     rays[ray_index].t = FLT_MAX;
-    // Flag rays that exit the macrocell grid
-    imageStore(render_target, ivec2(gl_GlobalInvocationID.xy), vec4(0, 0, 0, 1));
+    // Rays that exit the macrocell grid write the background color
+    imageStore(render_target, ivec2(gl_GlobalInvocationID.xy), vec4(1));
 }
 
