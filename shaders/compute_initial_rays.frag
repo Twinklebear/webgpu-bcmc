@@ -14,7 +14,6 @@ layout(set = 0, binding = 2, std140) uniform VolumeParams
     uvec4 volume_dims;
     uvec4 padded_dims;
     vec4 volume_scale;
-
     uint max_bits;
     float isovalue;
     uint image_width;

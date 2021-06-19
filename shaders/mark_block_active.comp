@@ -14,30 +14,41 @@ layout(set = 0, binding = 0, std140) uniform VolumeParams
     uint image_width;
 };
 
-layout(set = 0, binding = 1, std430) buffer BlockActive
+layout(set = 0, binding = 1, std140) uniform LOD
+{
+    uint LOD_threshold;
+};
+
+layout(set = 0, binding = 2, std140) uniform ViewParams
+{
+    mat4 proj_view;
+    vec4 eye_pos;
+    vec4 eye_dir;
+    float near_plane;
+};
+
+layout(set = 0, binding = 3, std430) buffer BlockActive
 {
     uint block_active[];
 };
 
-layout(set = 0, binding = 2, std430) buffer BlockNumRays
+layout(set = 0, binding = 4, std430) buffer BlockNumRays
 {
     // # of rays per-block, must increment atomicly!
     uint block_num_rays[];
 };
 
-layout(set = 0, binding = 3, std430) buffer RayInformation
+layout(set = 0, binding = 5, std430) buffer RayInformation
 {
     RayInfo rays[];
 };
 
-layout(set = 0, binding = 4, std430) buffer BlockVisible
+layout(set = 0, binding = 6, std430) buffer BlockVisible
 {
     uint block_visible[];
 };
 
-layout(set = 0, binding = 5) uniform LOD {
-    uint LOD_threshold;
-};
+uniform layout(set = 1, binding = 0, rgba8) writeonly image2D render_target;
 
 uvec3 block_id_to_pos(uint id)
 {
@@ -62,6 +73,7 @@ void main(void)
 
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
     const uint block_id = rays[ray_index].block_id;
+    const uvec3 block_pos = block_id_to_pos(block_id);
 
     // May need to become an atomic or? I don't think it should
     // be an issue but let's see
@@ -70,16 +82,34 @@ void main(void)
     // Count this ray for the block
     uint num_rays = atomicAdd(block_num_rays[block_id], 1) + 1;
 
-    if (num_rays >= LOD_threshold) {
-        block_active[block_id] = 1;
-    }
+    // The first ray to hit a block computes if the block should
+    // use its LOD representation or not based on its size on screen
+    if (num_rays == 1) {
+        // Transform the block center and bounding sphere radius into world space
+        vec3 volume_translation = -volume_scale.xyz * 0.5;
+        vec3 block_center = vec3(block_pos * 4 + uvec3(2));
+        block_center = (block_center / volume_dims.xyz) * volume_scale.xyz + volume_translation;
 
-    const uvec3 block_pos = block_id_to_pos(block_id);
+        // The radius of a bounding sphere for each block is a bit less than 3.5 voxels
+        float radius = 3.5;
+        radius = (radius / length(volume_dims.xyz)) * length(volume_scale.xyz);
+
+        // Project the bounding sphere radius to the screen to determine the projected size
+        const float dist = abs(dot(eye_dir.xyz, (block_center - eye_pos.xyz)));
+        // Note: near plane just 1 in the ray tracer, doesn't really have a near plane like GL
+        float proj_radius = radius * (1.0 / dist);
+        // Scale into screen space
+        proj_radius = proj_radius * length(vec2(1280, 720));
+        float proj_area = pow(proj_radius, 2.0) * 3.14;
+        if (proj_area >= LOD_threshold) {
+            block_active[block_id] = 1;
+        }
+    }
 
     // Mark this ray's block's neighbors to the positive side as active
     // These blocks must be decompressed for neighbor data, but this ray
     // doesn't need to process them.
-    if (num_rays >= LOD_threshold) {
+    if (num_rays == 1 && block_active[block_id] == 1) {
         for (int k = 0; k < 2; ++k) {
             for (int j = 0; j < 2; ++j) {
                 for (int i = 0; i < 2; ++i) {

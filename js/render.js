@@ -73,8 +73,9 @@
         canvas.width,
         canvas.height,
     ]);
+    const nearPlane = 0.1;
     var proj = mat4.perspective(
-        mat4.create(), (50 * Math.PI) / 180.0, canvas.width / canvas.height, 0.01, 1000);
+        mat4.create(), (50 * Math.PI) / 180.0, canvas.width / canvas.height, nearPlane, 1000);
     var projView = mat4.create();
 
     var numFrames = 0;
@@ -120,7 +121,8 @@
     requestAnimationFrame(animationFrame);
 
     var upload = device.createBuffer({
-        size: 20 * 4,
+        // mat4, 2 vec4's and a float + some extra to align
+        size: 32 * 4,
         usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
     });
 
@@ -182,6 +184,8 @@
         var uploadArray = new Float32Array(upload.getMappedRange());
         uploadArray.set(projView);
         uploadArray.set(camera.eyePos(), 16);
+        uploadArray.set(camera.eyeDir(), 20);
+        uploadArray.set([nearPlane], 24);
         upload.unmap();
 
         if (cameraChanged) {

@@ -5,9 +5,12 @@ layout(location = 0) in vec3 pos;
 layout(location = 0) out vec3 vray_dir;
 layout(location = 1) flat out vec3 transformed_eye;
 
-layout(set = 0, binding = 0, std140) uniform ViewParams {
+layout(set = 0, binding = 0, std140) uniform ViewParams
+{
     mat4 proj_view;
     vec4 eye_pos;
+    vec4 eye_dir;
+    float near_plane;
 };
 
 layout(set = 0, binding = 2, std140) uniform VolumeParams

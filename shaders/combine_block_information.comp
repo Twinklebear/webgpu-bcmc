@@ -22,6 +22,11 @@ layout(set = 0, binding = 3, std430) buffer BlockNumRays
     uint block_num_rays[];
 };
 
+layout(set = 0, binding = 4, std430) buffer BlockActive
+{
+    uint block_active[];
+};
+
 void main(void)
 {
     // Combine the buffers to fit in fewer storage buffers until limits are removed
@@ -31,5 +36,8 @@ void main(void)
     blocks[gl_GlobalInvocationID.x].id = id;
     blocks[gl_GlobalInvocationID.x].ray_offset = block_ray_offsets[id];
     blocks[gl_GlobalInvocationID.x].num_rays = block_num_rays[id];
+    // If the block is running in this pipeline it must be visible,
+    // so if it's not active, then it's an LOD block
+    blocks[gl_GlobalInvocationID.x].lod = block_active[id] == 0 ? 1 : 0;
 }
 
