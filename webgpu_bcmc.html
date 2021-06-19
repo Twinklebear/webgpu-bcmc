@@ -18,18 +18,23 @@
                 <h4>WebGPU Volume Raycaster</h4>
                 <canvas id="webgpu-canvas" class="img-fluid" width="1280" height="720"></canvas>
             </div>
+            <img id="image">
             <div class="col-12 col-lg-8 mx-auto row">
                 <div class="form-group col-8">
                     <label for="isovalue">Isovalue</label>
                     <input type="range" class="form-control-range" id="isovalue" min="0.0" max="255.0" step="1">
+                </div>
+                <div class="form-group col-4">
+                    <input type="checkbox" class="form-check-input" id="enableCache">
+                    <label for="enableCache">Enable Cache</label>
                 </div>
                 <div class="form-group col-8">
                     <label for="lod">LOD Threshold</label>
                     <input type="range" class="form-control-range" id="lod" min="0" max="25" step="1" value="0">
                 </div>
                 <div class="form-group col-4">
-                    <input type="checkbox" class="form-check-input" id="enableCache">
-                    <label for="enableCache">Enable Cache</label>
+                    <input type="checkbox" class="form-check-input" id="outputImages">
+                    <label for="outputImages">Output Images</label>
                 </div>
                 <!--
                 <button href="javascript:void(0);" onclick="recomputeSurface();"
@@ -89,6 +94,7 @@
     <script src="js/radix_sort_by_key.js"></script>
     <script src="js/run_benchmark.js"></script>
     <script src="js/volume_raycaster.js"></script>
+    <script src="js/FileSaver.js"></script>
     <script src="js/render.js"></script>
 </body>
 

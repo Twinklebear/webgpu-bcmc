@@ -6,7 +6,7 @@
     var canvas = document.getElementById("webgpu-canvas");
     var context = canvas.getContext("gpupresent");
 
-    var dataset = datasets.miranda;
+    var dataset = datasets.skull;
     if (window.location.hash) {
         var name = decodeURI(window.location.hash.substr(1));
         console.log(`Linked to data set ${name}`);
@@ -273,6 +273,9 @@
             surfaceDone = await volumeRC.renderSurface(
                 currentIsovalue, currentLOD, upload, perfTracker, recomputeSurface);
             var end = performance.now();
+            if (document.getElementById("outputImages").checked && surfaceDone) {
+                canvas.toBlob(function (b) { saveAs(b, `${dataset.name.substring(0, 5)}_pass_${volumeRC.numPasses}.png`); }, "image/png");
+            }
             averageComputeTime = Math.round(volumeRC.totalPassTime / volumeRC.numPasses);
             recomputeSurface = false;
         }
