@@ -206,7 +206,7 @@ var VolumeRaycaster = function (device, canvas) {
     this.renderTarget = this.device.createTexture({
         size: [this.canvas.width, this.canvas.height, 1],
         format: renderTargetFormat,
-        usage: GPUTextureUsage.STORAGE | GPUTextureUsage.RENDER_ATTACHMENT
+        usage: GPUTextureUsage.STORAGE | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
     });
 
     this.initialRaysPipeline = device.createRenderPipeline({

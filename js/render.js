@@ -32,6 +32,10 @@
         return;
     }
 
+    var imageBuffer = device.createBuffer({
+        size: canvas.width * canvas.height * 4,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
     var volumeRC = new VolumeRaycaster(device, canvas);
     await volumeRC.setCompressedVolume(
         compressedData, dataset.compressionRate, volumeDims, dataset.scale);
@@ -273,8 +277,23 @@
             surfaceDone = await volumeRC.renderSurface(
                 currentIsovalue, currentLOD, upload, perfTracker, recomputeSurface);
             var end = performance.now();
-            if (document.getElementById("outputImages").checked && surfaceDone) {
-                canvas.toBlob(function (b) { saveAs(b, `${dataset.name.substring(0, 5)}_pass_${volumeRC.numPasses}.png`); }, "image/png");
+            if (document.getElementById("outputImages").checked) {
+                var commandEncoder = device.createCommandEncoder();
+                commandEncoder.copyTextureToBuffer({ texture: volumeRC.renderTarget }, { buffer: imageBuffer, bytesPerRow: canvas.width * 4 }, [canvas.width, canvas.height, 1]);
+                device.queue.submit([commandEncoder.finish()]);
+                await device.queue.onSubmittedWorkDone();
+                await imageBuffer.mapAsync(GPUMapMode.READ);
+                var outputArray = new Uint8Array(imageBuffer.getMappedRange());
+                var outCanvas = document.getElementById('out-canvas');
+                var context = outCanvas.getContext('2d');
+                var imgData = context.createImageData(canvas.width, canvas.height);
+                // fill imgData with colors from array
+                for (var i = 0; i < outputArray.length; i++) {
+                    imgData.data[i] = outputArray[i];
+                }
+                context.putImageData(imgData, 0, 0);
+                outCanvas.toBlob(function (b) { saveAs(b, `${dataset.name.substring(0, 5)}_pass_${volumeRC.numPasses}.png`); }, "image/png");
+                imageBuffer.unmap();
             }
             averageComputeTime = Math.round(volumeRC.totalPassTime / volumeRC.numPasses);
             recomputeSurface = false;
