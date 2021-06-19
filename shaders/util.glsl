@@ -25,6 +25,7 @@ struct BlockInfo {
     uint id;
     uint ray_offset;
     uint num_rays;
+    uint lod;
 };
 
 bool outside_grid(const vec3 p, const vec3 grid_dims) {
