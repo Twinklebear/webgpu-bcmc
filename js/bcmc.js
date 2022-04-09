@@ -1,16 +1,19 @@
 (async () => {
     var adapter = await navigator.gpu.requestAdapter();
+    console.log(adapter.limits);
 
-    // TODO: Waiting on Chrome Canary to support passing these limits through
+    // Request the max limit the device supports
     var gpuDeviceDesc = {
-        nonGuaranteedLimits: {
-            maxStorageBuffersPerShaderStage: 8,
+        requiredLimits: {
+            maxStorageBuffersPerShaderStage: adapter.limits.maxStorageBuffersPerShaderStage,
+            maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
         },
     };
-    var device = await adapter.requestDevice();
+    var device = await adapter.requestDevice(gpuDeviceDesc);
+    console.log(`max wg = ${device.limits.maxComputeWorkgroupsPerDimension}`);
 
     var canvas = document.getElementById("webgpu-canvas");
-    var context = canvas.getContext("gpupresent");
+    var context = canvas.getContext("webgpu");
 
     var dataset = datasets.skull;
     if (window.location.hash) {
@@ -160,11 +163,8 @@
     controller.registerForCanvas(canvas);
 
     var swapChainFormat = "bgra8unorm";
-    var swapChain = context.configureSwapChain({
-        device: device,
-        format: swapChainFormat,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    });
+    context.configure(
+        {device: device, format: swapChainFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT});
 
     var depthTexture = device.createTexture({
         size: {
@@ -180,14 +180,18 @@
         colorAttachments: [
             {
                 view: undefined,
-                loadValue: [1.0, 1.0, 1.0, 1],
+                loadOp: "clear",
+                clearValue: [1.0, 1.0, 1.0, 1],
+                storeOp: "store"
             },
         ],
         depthStencilAttachment: {
             view: depthTexture.createView(),
-            depthLoadValue: 1.0,
+            depthLoadOp: "clear",
+            depthClearValue: 1.0,
             depthStoreOp: "store",
-            stencilLoadValue: 0,
+            stencilLoadOp: "clear",
+            stencilClearValue: 0,
             stencilStoreOp: "store",
         },
     };
@@ -377,7 +381,7 @@
                   */
         }
 
-        renderPassDesc.colorAttachments[0].view = swapChain.getCurrentTexture().createView();
+        renderPassDesc.colorAttachments[0].view = context.getCurrentTexture().createView();
 
         var commandEncoder = device.createCommandEncoder();
 
@@ -390,7 +394,7 @@
             renderPass.setVertexBuffer(0, compressedMC.vertexBuffer);
             renderPass.draw(totalVerts, 1, 0, 0);
         }
-        renderPass.endPass();
+        renderPass.end();
         device.queue.submit([commandEncoder.finish()]);
 
         // Measure render time by waiting for the work done

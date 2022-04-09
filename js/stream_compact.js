@@ -8,7 +8,7 @@ var StreamCompact = function(device) {
     // dynamic offsets is aligned to 256 bytes. We're offsetting into arrays
     // of uint32, so determine the max dispatch size we should use for each
     // individual aligned chunk
-    this.maxDispatchSize = Math.floor((2 * 65535 * 4) / 256) * 256;
+    this.maxDispatchSize = Math.floor(65535 / 256) * 256;
 
     this.streamCompactBGLayout = device.createBindGroupLayout({
         entries: [
@@ -80,6 +80,8 @@ StreamCompact.prototype.compactActiveIDs =
             Math.min(numElements - i * this.maxDispatchSize, this.maxDispatchSize);
         var offset = i * this.maxDispatchSize * 4;
         // Have to create bind groups here because dynamic offsets are not allowed
+        // for security
+        // TODO: Was this re-enabled?
         var streamCompactBG = null;
         if (numWorkGroups === this.maxDispatchSize) {
             streamCompactBG = this.device.createBindGroup({
@@ -157,7 +159,7 @@ StreamCompact.prototype.compactActiveIDs =
         pass.setBindGroup(0, streamCompactBG);
         pass.dispatch(numWorkGroups, 1, 1);
     }
-    pass.endPass();
+    pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
 };

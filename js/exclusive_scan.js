@@ -258,7 +258,7 @@ ExclusiveScanner.prototype.scan = async function(dataSize) {
         computePass.setBindGroup(0, scanBlockBG);
         computePass.dispatch(nWorkGroups, 1, 1);
 
-        computePass.endPass();
+        computePass.end();
 
         // Update the carry in value for the next chunk, copy carry out to carry in
         commandEncoder.copyBufferToBuffer(this.carryBuf, 4, this.carryIntermediateBuf, 0, 4);

@@ -14,9 +14,15 @@ layout(set = 1, binding = 0, std430) buffer BlockHasVertices
     uint block_has_vertices[];
 };
 
+layout(set = 1, binding = 1, std140) uniform BlockIDOffset
+{
+    uint block_id_offset;
+};
+
 void main(void)
 {
-    const uint block_id = block_ids[gl_WorkGroupID.x];
+    const uint work_item = gl_WorkGroupID.x + block_id_offset;
+    const uint block_id = block_ids[work_item];
     const uvec3 block_dims = load_block(block_id);
 
     const uvec3 voxel_pos = voxel_id_to_voxel(gl_LocalInvocationID.x);
@@ -49,10 +55,10 @@ void main(void)
 
     // Check if any voxel in the block will output vertices
     if (gl_LocalInvocationID.x == 0) {
-        block_has_vertices[gl_WorkGroupID.x] = 0;
+        block_has_vertices[work_item] = 0;
         for (int i = 0; i < BLOCK_NUM_VOXELS; ++i) {
             if (voxel_vertices[i] > 0) {
-                block_has_vertices[gl_WorkGroupID.x] = 1;
+                block_has_vertices[work_item] = 1;
                 break;
             }
         }

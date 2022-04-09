@@ -298,7 +298,7 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
     pass.setBindGroup(0, infoBindGroup);
     pass.setBindGroup(1, radixSortBG);
     pass.dispatch(chunkCount, 1, 1);
-    pass.endPass();
+    pass.end();
 
     // Merge the chunks up
     var pass = commandEncoder.beginComputePass();
@@ -322,7 +322,7 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
         pass.setBindGroup(2, numWorkGroupsBG);
         pass.dispatch(chunkCount / (2 << i), 1, 1);
     }
-    pass.endPass();
+    pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
 
     var commandEncoder = this.device.createCommandEncoder();
@@ -332,7 +332,7 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
         pass.setBindGroup(0, infoBindGroup);
         pass.setBindGroup(1, reverseBG);
         pass.dispatch(Math.ceil(chunkCount / 2), 1, 1);
-        pass.endPass();
+        pass.end();
     }
 
     var readbackOffset = reverse ? alignedSize - size : 0;

@@ -17,9 +17,14 @@ layout(set = 1, binding = 1, std430) buffer BlockWithVertsIndices
     uint block_with_verts_indices[];
 };
 
+layout(set = 2, binding = 0, std140) uniform BlockIndexOffset
+{
+    uint block_index_offset;
+};
+
 void main(void)
 {
-    const uint block_id = block_ids[block_with_verts_indices[gl_WorkGroupID.x]];
+    const uint block_id = block_ids[block_with_verts_indices[gl_WorkGroupID.x + block_index_offset]];
     const uvec3 block_dims = load_block(block_id);
 
     const uvec3 voxel_pos = voxel_id_to_voxel(gl_LocalInvocationID.x);
@@ -67,7 +72,7 @@ void main(void)
     // which will be output by this block
     if (gl_LocalInvocationID.x == 0) {
         uint block_verts = voxel_vertices[BLOCK_NUM_VOXELS - 1];
-        block_offsets[gl_WorkGroupID.x] = block_verts;
+        block_offsets[gl_WorkGroupID.x + block_index_offset] = block_verts;
     }
 }
 

@@ -6,10 +6,6 @@ var CompressedMarchingCubes = function(device) {
     this.numVertices = 0;
     this.numBlocksWithVertices = 0;
 
-    // Max dispatch size for more computationally heavy kernels
-    // which might hit TDR on lower power devices
-    this.maxDispatchSize = 512000;
-
     this.numActiveBlocksStorage = 0;
     this.numBlocksWithVerticesStorage = 0;
     this.numVerticesStorage = 0;
@@ -26,7 +22,7 @@ var CompressedMarchingCubes = function(device) {
     // We'll need a max of maxDispatchSize BlockInfo structs in the buffer,
     // so just allocate it once up front
     this.blockInformationBuffer = device.createBuffer({
-        size: this.maxDispatchSize * 8,
+        size: device.limits.maxComputeWorkgroupsPerDimension * 8,
         usage: GPUBufferUsage.STORAGE,
     });
 
@@ -55,9 +51,17 @@ var CompressedMarchingCubes = function(device) {
             },
         ],
     });
+    this.computeBlockRangeS1B0DynamicBGLayout = device.createBindGroupLayout({
+        entries: [{
+            binding: 0,
+            visibility: GPUShaderStage.COMPUTE,
+            buffer: {type: "uniform", hasDynamicOffset: true}
+        }]
+    });
     this.computeBlockRangePipeline = device.createComputePipeline({
         layout: device.createPipelineLayout({
-            bindGroupLayouts: [this.computeBlockRangeBGLayout],
+            bindGroupLayouts:
+                [this.computeBlockRangeBGLayout, this.computeBlockRangeS1B0DynamicBGLayout],
         }),
         compute: {
             module: device.createShaderModule({
@@ -263,12 +267,41 @@ var CompressedMarchingCubes = function(device) {
             },
         ],
     });
+    this.computeBlockHasVerticesBG1Layout = device.createBindGroupLayout({
+        entries: [
+            {
+                binding: 0,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
+            },
+            {
+                binding: 1,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "uniform",
+                    hasDynamicOffset: true,
+                }
+            },
+        ],
+    });
+    this.computeBlockVertexCountsBG2Layout = device.createBindGroupLayout({
+        entries: [{
+            binding: 0,
+            visibility: GPUShaderStage.COMPUTE,
+            buffer: {
+                type: "uniform",
+                hasDynamicOffset: true,
+            }
+        }]
+    });
 
     this.computeBlockHasVerticesPipeline = device.createComputePipeline({
         layout: device.createPipelineLayout({
             bindGroupLayouts: [
                 this.computeBlockVertsInfoBGLayout,
-                this.sb1Binding0BGLayout,
+                this.computeBlockHasVerticesBG1Layout,
             ],
         }),
         compute: {
@@ -283,6 +316,7 @@ var CompressedMarchingCubes = function(device) {
             bindGroupLayouts: [
                 this.computeBlockVertsInfoBGLayout,
                 this.sb2Binding01BGLayout,
+                this.computeBlockVertexCountsBG2Layout
             ],
         }),
         compute: {
@@ -358,7 +392,7 @@ CompressedMarchingCubes.prototype.reportMemoryUse = function() {
             blocksWithVertices: this.numBlocksWithVerticesStorage * 4,
             blockVertexOffsets:
                 this.scanPipeline.getAlignedSize(this.numBlocksWithVerticesStorage),
-            blockInformationBufferTmp: this.maxDispatchSize * 8,
+            blockInformationBufferTmp: this.device.limits.maxComputeWorkgroupsPerDimension * 8,
             triTable: triTable.byteLength,
             volumeInfo: 16 * 4,
         },
@@ -405,11 +439,6 @@ CompressedMarchingCubes.prototype.setCompressedVolume =
         alignTo(volumeDims[2], 4),
     ];
     this.totalBlocks = (this.paddedDims[0] * this.paddedDims[1] * this.paddedDims[2]) / 64;
-    console.log(`total blocks ${this.totalBlocks}`);
-    const groupThreadCount = 32;
-    this.numWorkGroups = Math.ceil(this.totalBlocks / groupThreadCount);
-    console.log(`num work groups ${this.numWorkGroups}`);
-    console.log(`Cache initial size: ${Math.ceil(this.totalBlocks * 0.05)}`);
 
     this.lruCache = new LRUCache(this.device,
                                  this.scanPipeline,
@@ -523,15 +552,28 @@ CompressedMarchingCubes.prototype.computeBlockRanges = async function() {
         ],
     });
 
+    const groupThreadCount = 32;
+    var totalWorkGroups = Math.ceil(this.totalBlocks / groupThreadCount);
+
+    var pushConstants = buildPushConstantsBuffer(this.device, totalWorkGroups);
+
+    var blockIDOffsetBG = this.device.createBindGroup({
+        layout: this.computeBlockRangeS1B0DynamicBGLayout,
+        entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+    });
+
     var commandEncoder = this.device.createCommandEncoder();
     var pass = commandEncoder.beginComputePass();
 
     // Decompress each block and compute its range
     pass.setPipeline(this.computeBlockRangePipeline);
     pass.setBindGroup(0, bindGroup);
-    pass.dispatch(this.numWorkGroups, 1, 1);
+    for (var i = 0; i < pushConstants.nOffsets; ++i) {
+        pass.setBindGroup(1, blockIDOffsetBG, pushConstants.dynamicOffsets, i, 1);
+        pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+    }
 
-    pass.endPass();
+    pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
 };
 
@@ -579,8 +621,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
     var start = performance.now();
     var numActiveBlocks = await this.computeActiveBlocks();
     var end = performance.now();
-    console.log(`Compute active took ${end - start}ms`);
-    console.log(`# of active blocks = ${numActiveBlocks}`);
+    // console.log(`Compute active took ${end - start}ms`);
 
     perfTracker.computeActiveBlocks.push(end - start);
     perfTracker.numActiveBlocks.push(numActiveBlocks);
@@ -607,8 +648,8 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
         await this.lruCache.update(this.blockActiveBuffer, perfTracker);
     var end = performance.now();
     this.newDecompressed = nBlocksToDecompress;
-    console.log(`# Blocks to decompress ${nBlocksToDecompress}`);
-    console.log(`Cache update took ${end - start}ms`);
+    // console.log(`# Blocks to decompress ${nBlocksToDecompress}`);
+    // console.log(`Cache update took ${end - start}ms`);
     perfTracker.cacheUpdate.push(end - start);
     perfTracker.numBlocksDecompressed.push(nBlocksToDecompress);
 
@@ -651,7 +692,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
         decompressBlockIDs.destroy();
     }
     var end = performance.now();
-    console.log(`Block decompression took ${end - start}`);
+    // console.log(`Block decompression took ${end - start}`);
     perfTracker.decompression.push(end - start);
 
     // NOTE: we need to keep active block IDs and offsets as well, but as a separate thing
@@ -664,7 +705,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
                                               this.activeBlockOffsets,
                                               this.activeBlockIDs);
     var end = performance.now();
-    console.log(`Compact active block IDs took ${end - start}ms`);
+    // console.log(`Compact active block IDs took ${end - start}ms`);
     perfTracker.compactActiveIDs.push(end - start);
 
     var start = performance.now();
@@ -682,8 +723,6 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
     this.device.queue.submit([commandEncoder.finish()]);
 
     var numBlocksWithVertices = await this.blockWithVerticesScanner.scan(this.numActiveBlocks);
-    console.log(
-        `Of ${numActiveBlocks} active, only ${numBlocksWithVertices} will output vertices`);
     if (numBlocksWithVertices > this.numBlocksWithVerticesStorage) {
         this.numBlocksWithVerticesStorage = Math.floor(Math.min(
             this.totalBlocks,
@@ -714,7 +753,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
                                               this.blockHasVertsOffsets,
                                               this.blocksWithVertices);
     var end = performance.now();
-    console.log(`Active blocks w/ verts reduction took ${end - start}ms`);
+    // console.log(`Active blocks w/ verts reduction took ${end - start}ms`);
 
     perfTracker.numBlocksWithVertices.push(numBlocksWithVertices);
     perfTracker.compactBlocksWithVertices.push(end - start);
@@ -724,8 +763,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
     var start = performance.now();
     var numVertices = await this.computeBlockVertexCounts();
     var end = performance.now();
-    console.log(`Vertex count computation took ${end - start}ms`);
-    console.log(`# Vertices: ${numVertices}`);
+    // console.log(`Vertex count computation took ${end - start}ms`);
     perfTracker.numVertices.push(numVertices);
     if (numVertices == 0) {
         perfTracker.computeVertices.push(0);
@@ -762,7 +800,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
     var start = performance.now();
     await this.computeVertices();
     var end = performance.now();
-    console.log(`Vertex computation took ${end - start}ms`);
+    // console.log(`Vertex computation took ${end - start}ms`);
     perfTracker.computeVertices.push(end - start);
 
     // Compute the vertices and output them to the single compacted buffer
@@ -775,7 +813,7 @@ CompressedMarchingCubes.prototype.computeActiveBlocks = async function() {
     pass.setPipeline(this.computeActiveBlocksPipeline);
     pass.setBindGroup(0, this.computeActiveBlocksBG);
     pass.dispatch(this.paddedDims[0] / 4, this.paddedDims[1] / 4, this.paddedDims[2] / 4);
-    pass.endPass();
+    pass.end();
     commandEncoder.copyBufferToBuffer(
         this.blockActiveBuffer, 0, this.activeBlockOffsets, 0, this.totalBlocks * 4);
     this.device.queue.submit([commandEncoder.finish()]);
@@ -784,7 +822,7 @@ CompressedMarchingCubes.prototype.computeActiveBlocks = async function() {
     var start = performance.now();
     var totalActive = await this.activeBlockScanner.scan(this.totalBlocks);
     var end = performance.now();
-    console.log(`Active block scan took ${end - start}ms`);
+    // console.log(`Active block scan took ${end - start}ms`);
     return totalActive;
 };
 
@@ -826,7 +864,8 @@ CompressedMarchingCubes.prototype.decompressBlocks =
         ],
     });
 
-    var numChunks = Math.ceil(nBlocksToDecompress / this.maxDispatchSize);
+    var numChunks =
+        Math.ceil(nBlocksToDecompress / this.device.limits.maxComputeWorkgroupsPerDimension);
     var dispatchChunkOffsetsBuf = this.device.createBuffer({
         size: numChunks * 256,
         usage: GPUBufferUsage.UNIFORM,
@@ -834,15 +873,16 @@ CompressedMarchingCubes.prototype.decompressBlocks =
     });
     var map = new Uint32Array(dispatchChunkOffsetsBuf.getMappedRange());
     for (var i = 0; i < numChunks; ++i) {
-        map[i * 64] = i * this.maxDispatchSize;
+        map[i * 64] = i * this.device.limits.maxComputeWorkgroupsPerDimension;
     }
     dispatchChunkOffsetsBuf.unmap();
 
     // We execute these chunks in separate submissions to avoid having them
     // execute all at once and trigger a TDR if we're decompressing a large amount of data
     for (var i = 0; i < numChunks; ++i) {
-        var numWorkGroups =
-            Math.min(nBlocksToDecompress - i * this.maxDispatchSize, this.maxDispatchSize);
+        var numWorkGroups = Math.min(
+            nBlocksToDecompress - i * this.device.limits.maxComputeWorkgroupsPerDimension,
+            this.device.limits.maxComputeWorkgroupsPerDimension);
         var commandEncoder = this.device.createCommandEncoder();
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.decompressBlocksPipeline);
@@ -863,7 +903,7 @@ CompressedMarchingCubes.prototype.decompressBlocks =
         });
         pass.setBindGroup(1, decompressBlocksStartOffsetBG);
         pass.dispatch(numWorkGroups, 1, 1);
-        pass.endPass();
+        pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
     }
     await this.device.queue.onSubmittedWorkDone();
@@ -912,8 +952,11 @@ CompressedMarchingCubes.prototype.computeBlockHasVertices = async function() {
             },
         ],
     });
+
+    var pushConstants = buildPushConstantsBuffer(this.device, this.numActiveBlocks);
+
     var blockHasVerticesBG = this.device.createBindGroup({
-        layout: this.sb1Binding0BGLayout,
+        layout: this.computeBlockHasVerticesBG1Layout,
         entries: [
             {
                 binding: 0,
@@ -921,6 +964,13 @@ CompressedMarchingCubes.prototype.computeBlockHasVertices = async function() {
                     buffer: this.blockHasVertices,
                 },
             },
+            {
+                binding: 1,
+                resource: {
+                    buffer: pushConstants.gpuBuffer,
+                    size: 4,
+                }
+            }
         ],
     });
 
@@ -928,9 +978,11 @@ CompressedMarchingCubes.prototype.computeBlockHasVertices = async function() {
     var pass = commandEncoder.beginComputePass();
     pass.setPipeline(this.computeBlockHasVerticesPipeline);
     pass.setBindGroup(0, this.computeBlockVertexInfoBG);
-    pass.setBindGroup(1, blockHasVerticesBG);
-    pass.dispatch(this.numActiveBlocks, 1, 1);
-    pass.endPass();
+    for (var i = 0; i < pushConstants.nOffsets; ++i) {
+        pass.setBindGroup(1, blockHasVerticesBG, pushConstants.dynamicOffsets, i, 1);
+        pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+    }
+    pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
 
     await this.device.queue.onSubmittedWorkDone();
@@ -955,13 +1007,32 @@ CompressedMarchingCubes.prototype.computeBlockVertexCounts = async function() {
         ],
     });
 
+    var pushConstants = buildPushConstantsBuffer(this.device, this.numBlocksWithVertices);
+
+    var blockOffsetsBG = this.device.createBindGroup({
+        layout: this.computeBlockVertexCountsBG2Layout,
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: pushConstants.gpuBuffer,
+                    size: 4,
+                },
+            },
+        ]
+    });
+
     var commandEncoder = this.device.createCommandEncoder();
     var pass = commandEncoder.beginComputePass();
     pass.setPipeline(this.computeBlockVertexCountsPipeline);
     pass.setBindGroup(0, this.computeBlockVertexInfoBG);
     pass.setBindGroup(1, this.blockVertexOffsetsBG);
-    pass.dispatch(this.numBlocksWithVertices, 1, 1);
-    pass.endPass();
+    // Run chunks
+    for (var i = 0; i < pushConstants.nOffsets; ++i) {
+        pass.setBindGroup(2, blockOffsetsBG, pushConstants.dynamicOffsets, i, 1);
+        pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+    }
+    pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
 
     var total = await this.blockVertexOffsetsScanner.scan(this.numBlocksWithVertices);
@@ -969,11 +1040,13 @@ CompressedMarchingCubes.prototype.computeBlockVertexCounts = async function() {
 };
 
 CompressedMarchingCubes.prototype.computeVertices = async function() {
-    var numChunks = Math.ceil(this.numBlocksWithVertices / this.maxDispatchSize);
+    var numChunks = Math.ceil(this.numBlocksWithVertices /
+                              this.device.limits.maxComputeWorkgroupsPerDimension);
 
     // TODO: This is aligned to 256b b/c of limitations with dynamic offsets,
     // but since we're not using dynamic offsets b/c they're disabled for security
     // the offset likely no longer needs such a big alignment
+    // TODO: can swap back to dynamic offsets which are enabled again
     var dispatchChunkOffsetsBuf = this.device.createBuffer({
         size: numChunks * 256,
         usage: GPUBufferUsage.UNIFORM,
@@ -981,7 +1054,7 @@ CompressedMarchingCubes.prototype.computeVertices = async function() {
     });
     var map = new Uint32Array(dispatchChunkOffsetsBuf.getMappedRange());
     for (var i = 0; i < numChunks; ++i) {
-        map[i * 64] = i * this.maxDispatchSize;
+        map[i * 64] = i * this.device.limits.maxComputeWorkgroupsPerDimension;
     }
     dispatchChunkOffsetsBuf.unmap();
 
@@ -997,8 +1070,10 @@ CompressedMarchingCubes.prototype.computeVertices = async function() {
 
     // Chunk up dispatch to avoid hitting TDR
     for (var i = 0; i < numChunks; ++i) {
-        var numWorkGroups = Math.min(this.numBlocksWithVertices - i * this.maxDispatchSize,
-                                     this.maxDispatchSize);
+        var numWorkGroups =
+            Math.min(this.numBlocksWithVertices -
+                         i * this.device.limits.maxComputeWorkgroupsPerDimension,
+                     this.device.limits.maxComputeWorkgroupsPerDimension);
 
         var offsetBG = this.device.createBindGroup({
             layout: this.ub1binding0BGLayout,
@@ -1021,6 +1096,8 @@ CompressedMarchingCubes.prototype.computeVertices = async function() {
         // NOTE: The struct is needed so that we stay under the max storage buffers
         // per pipeline limit of Dawn (6), since Chrome hasn't implemented the higher
         // limits request API.
+        // Note: this limit is now 8 and the requests API is implemented so we could migrate
+        // off this if we wanted
         pass.setPipeline(this.buildBlockInfoPipeline);
         pass.setBindGroup(0, blockInformationBG);
         pass.setBindGroup(1, this.blockVertexOffsetsBG);
@@ -1034,7 +1111,7 @@ CompressedMarchingCubes.prototype.computeVertices = async function() {
         pass.setBindGroup(2, vertexBufferBG);
         pass.dispatch(numWorkGroups, 1, 1);
 
-        pass.endPass();
+        pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
     }
 

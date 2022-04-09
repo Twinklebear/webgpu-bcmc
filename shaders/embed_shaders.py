@@ -4,10 +4,11 @@ import sys
 import os
 import subprocess
 
-if len(sys.argv) < 2:
-    print("Usage <glslc>")
+if len(sys.argv) < 3:
+    print("Usage <glslc> <tint>")
 
 glslc = sys.argv[1]
+tint = sys.argv[2]
 output = "embedded_shaders.js"
 shaders = ["prefix_sum.comp", "block_prefix_sum.comp", "add_block_sums.comp",
         "stream_compact.comp", "mc_isosurface.vert", "mc_isosurface.frag",
@@ -38,7 +39,7 @@ for shader in shaders:
     fname, ext = os.path.splitext(os.path.basename(shader))
     var_name ="{}_{}_spv".format(fname, ext[1:])
     print("Embedding {} as {}".format(shader, var_name))
-    args = ["python", "compile_shader.py", glslc, shader, var_name, \
+    args = ["python3", "compile_shader.py", glslc, tint, shader, var_name, \
             "-DBLOCK_SIZE={}".format(block_size),\
             "-DSORT_CHUNK_SIZE={}".format(sort_chunk_size)]
     if draw_fog:
