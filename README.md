@@ -14,9 +14,9 @@ Chrome Canary 92.0.4512.0 (and later versions as long as the WebGPU API is not c
 though some data decompression corruption has been seen on macOS for some data sets. On Windows it runs
 well, so try it out online!
 
-- [Skull](https://www.willusher.io/webgpu-bcmc/webgpu_bcmc.html) (256^3, issues on macOS)
-- [Magnetic Reconnection](https://www.willusher.io/webgpu-bcmc/webgpu_bcmc.html#magnetic) (512^3, ok on macOS)
-- [Chameleon](https://www.willusher.io/webgpu-bcmc/webgpu_bcmc.html#chameleon) (1024x1024x1080, issues on macOS)
+- [Skull](https://www.willusher.io/webgpu-bcmc/webgpu_bcmc.html) (256^3)
+- [Magnetic Reconnection](https://www.willusher.io/webgpu-bcmc/webgpu_bcmc.html#magnetic) (512^3)
+- [Chameleon](https://www.willusher.io/webgpu-bcmc/webgpu_bcmc.html#chameleon) (1024x1024x1080)
 
 ## Images
 
