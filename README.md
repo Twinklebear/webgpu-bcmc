@@ -16,7 +16,6 @@ well, so try it out online!
 
 - [Skull](https://www.willusher.io/webgpu-bcmc/webgpu_bcmc.html) (256^3)
 - [Magnetic Reconnection](https://www.willusher.io/webgpu-bcmc/webgpu_bcmc.html#magnetic) (512^3)
-- [Chameleon](https://www.willusher.io/webgpu-bcmc/webgpu_bcmc.html#chameleon) (1024x1024x1080)
 
 ## Images
 
