@@ -52,7 +52,7 @@
     var mcMemDisplay = document.getElementById("mcMemDisplay");
     var cacheMemDisplay = document.getElementById("cacheMemDisplay");
     var fpsDisplay = document.getElementById("fps");
-    var camDisplay = document.getElementById("camDisplay");
+    // var camDisplay = document.getElementById("camDisplay");
 
     var enableCache = document.getElementById("enableCache");
     enableCache.checked = true;
@@ -304,15 +304,17 @@
             var eyePos = camera.eyePos();
             var eyeDir = camera.eyeDir();
             var upDir = camera.upDir();
+            /*
             camDisplay.innerHTML = `eye = ${eyePos[0].toFixed(4)} ${eyePos[1].toFixed(
-        4
-      )} ${eyePos[2].toFixed(4)}<br/>
-                dir = ${eyeDir[0].toFixed(4)} ${eyeDir[1].toFixed(
-        4
-      )} ${eyeDir[2].toFixed(4)}<br/>
-                up = ${upDir[0].toFixed(4)} ${upDir[1].toFixed(
-        4
-      )} ${upDir[2].toFixed(4)}`;
+                4
+              )} ${eyePos[2].toFixed(4)}<br/>
+                        dir = ${eyeDir[0].toFixed(4)} ${eyeDir[1].toFixed(
+                4
+              )} ${eyeDir[2].toFixed(4)}<br/>
+                        up = ${upDir[0].toFixed(4)} ${upDir[1].toFixed(
+                4
+              )} ${upDir[2].toFixed(4)}`;
+              */
         }
 
         await animationFrame();
