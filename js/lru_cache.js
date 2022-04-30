@@ -6,16 +6,21 @@ var LRUCache = function(
     this.device = device;
     this.scanPipeline = scanPipeline;
     this.streamCompact = streamCompact;
+
     this.totalElements = totalElements;
-    this.cacheSize = initialSize;
+
+    // Round up to the local size of 32 for the cache processing kernels
+    this.alignedTotalElements = alignTo(totalElements, 32);
+    this.cacheSize = alignTo(initialSize, 32);
     this.elementSize = elementSize;
     this.numNewItems = 0;
+    this.maxDispatchSize = device.limits.maxComputeWorkgroupsPerDimension;
 
     this.sorter = new RadixSorter(this.device);
 
     // For each element, track if it's in the cache, and if so where
     var buf = this.device.createBuffer({
-        size: totalElements * 4,
+        size: this.alignedTotalElements * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         mappedAtCreation: true,
     });
@@ -27,7 +32,7 @@ var LRUCache = function(
     // will be 1/0 per total element which could be cached so we can see
     // how many need to be added
     var buf = this.device.createBuffer({
-        size: totalElements * 4,
+        size: this.alignedTotalElements * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
         mappedAtCreation: true,
     });
@@ -36,18 +41,18 @@ var LRUCache = function(
     this.needsCaching = buf;
 
     this.needsCachingOffsets = this.device.createBuffer({
-        size: this.scanPipeline.getAlignedSize(totalElements) * 4,
+        size: this.scanPipeline.getAlignedSize(this.alignedTotalElements) * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
 
     // The age of each slot
     var buf = this.device.createBuffer({
-        size: initialSize * 4 * 3,
+        size: this.cacheSize * 4 * 3,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
         mappedAtCreation: true,
     });
     var m = new Int32Array(buf.getMappedRange());
-    for (var i = 0; i < initialSize; ++i) {
+    for (var i = 0; i < this.cacheSize; ++i) {
         m[i * 3] = 2 + i;   // For slot age
         m[i * 3 + 1] = 1;   // For slot availability
         m[i * 3 + 2] = -1;  // For slot ID
@@ -56,31 +61,30 @@ var LRUCache = function(
     this.slotData = buf;
 
     this.slotAvailableOffsets = this.device.createBuffer({
-        size: this.scanPipeline.getAlignedSize(initialSize) * 4,
+        size: this.scanPipeline.getAlignedSize(this.cacheSize) * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
 
     // A temp buffer to hold the available slot IDs for compaction
     this.slotAvailableForCompact = this.device.createBuffer({
-        size: initialSize * 4,
+        size: this.cacheSize * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
 
     this.slotAvailableIDs = this.device.createBuffer({
-        size: initialSize * 4,
+        size: this.cacheSize * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     });
 
-    // Buffer used to pass the previous cache size to lru_cache_init.comp, and cache size and
-    // total elements to lru_cache_inputs.comp
+    // Buffer used to pass the previous cache size to lru_cache_init.comp
     this.cacheSizeBuf = this.device.createBuffer({
-        size: 8,
+        size: 4,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
     // The actual cached data
     this.cache = this.device.createBuffer({
-        size: initialSize * elementSize,
+        size: this.cacheSize * elementSize,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
 
@@ -113,13 +117,6 @@ var LRUCache = function(
                     type: "storage",
                 }
             },
-            {
-                binding: 3,
-                visibility: GPUShaderStage.COMPUTE,
-                buffer: {
-                    type: "uniform",
-                }
-            }
         ],
     });
 
@@ -144,12 +141,6 @@ var LRUCache = function(
                     buffer: this.slotData,
                 },
             },
-            {
-                binding: 3,
-                resource: {
-                    buffer: this.cacheSizeBuf,
-                },
-            }
         ],
     });
 
@@ -184,6 +175,40 @@ var LRUCache = function(
         ],
     });
 
+    this.singleUniformBGLayout = this.device.createBindGroupLayout({
+        entries: [
+            {
+                binding: 0,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "uniform",
+                }
+            },
+        ],
+    });
+    this.cacheInitBG = this.device.createBindGroup({
+        layout: this.singleUniformBGLayout,
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: this.cacheSizeBuf,
+                },
+            },
+        ],
+    });
+
+    this.pushConstantsBGLayout = this.device.createBindGroupLayout({
+        entries: [{
+            binding: 0,
+            visibility: GPUShaderStage.COMPUTE,
+            buffer: {
+                hasDynamicOffset: true,
+                type: "uniform",
+            }
+        }]
+    });
+
     this.ageCacheSlotsPipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
             bindGroupLayouts: [this.lruCacheBGLayout],
@@ -196,7 +221,8 @@ var LRUCache = function(
 
     this.markNewItemsPipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts: [this.lruCacheBGLayout, this.markNewItemsBGLayout],
+            bindGroupLayouts:
+                [this.lruCacheBGLayout, this.markNewItemsBGLayout, this.pushConstantsBGLayout],
         }),
         compute: {
             module: device.createShaderModule({
@@ -208,7 +234,7 @@ var LRUCache = function(
 
     this.cacheInitPipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts: [this.lruCacheBGLayout],
+            bindGroupLayouts: [this.lruCacheBGLayout, this.singleUniformBGLayout],
         }),
         compute: {
             module: device.createShaderModule({code: lru_cache_init_comp_spv}),
@@ -218,7 +244,9 @@ var LRUCache = function(
 
     this.cacheUpdatePipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts: [this.lruCacheBGLayout, this.cacheUpdateBGLayout],
+            // The last BG layout passes the number of new items
+            bindGroupLayouts:
+                [this.lruCacheBGLayout, this.cacheUpdateBGLayout, this.singleUniformBGLayout],
         }),
         compute: {
             module: device.createShaderModule({code: lru_cache_update_comp_spv}),
@@ -228,7 +256,8 @@ var LRUCache = function(
 
     this.copyAvailableSlotAgePipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts: [this.lruCacheBGLayout, this.cacheUpdateBGLayout],
+            bindGroupLayouts:
+                [this.lruCacheBGLayout, this.cacheUpdateBGLayout, this.singleUniformBGLayout],
         }),
         compute: {
             module: device.createShaderModule({
@@ -282,7 +311,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     if (!(itemNeeded instanceof GPUBuffer)) {
         alert("itemNeeded info must be a GPUbuffer");
     }
-    console.log("------\nCache Update");
+    // console.log("------\nCache Update");
 
     if (perfTracker.lruMarkNewItems === undefined) {
         perfTracker.lruMarkNewItems = [];
@@ -317,16 +346,13 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         ],
     });
 
-    // Update the old cache size UBO so we know where to start initializing the data, along
-    // with total elements
+    // Update the old cache size UBO so we know where to start initializing the data
     var uploadBuf = this.device.createBuffer({
-        size: 8,
+        size: 4,
         usage: GPUBufferUsage.COPY_SRC,
         mappedAtCreation: true,
     });
-    var uploadArray = new Uint32Array(uploadBuf.getMappedRange());
-    uploadArray.set([this.cacheSize]);
-    uploadArray.set([this.totalElements], 1)
+    new Uint32Array(uploadBuf.getMappedRange()).set([this.cacheSize]);
     uploadBuf.unmap();
 
     var start = performance.now();
@@ -334,36 +360,58 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     // and are in the cache to unmark them, and which items no longer need
     // caching but are in the cache with age > 2 to mark their slot available.
     var commandEncoder = this.device.createCommandEncoder();
-    commandEncoder.copyBufferToBuffer(uploadBuf, 0, this.cacheSizeBuf, 0, 8);
+    commandEncoder.copyBufferToBuffer(uploadBuf, 0, this.cacheSizeBuf, 0, 4);
 
     var pass = commandEncoder.beginComputePass();
+
+    /*
+    console.log(`cacheSize = ${this.cacheSize}, totalElements = ${
+        this.totalElements}, aligned total = ${this.alignedTotalElements}`);
+        */
 
     // Age all slots in the cache
     pass.setPipeline(this.ageCacheSlotsPipeline);
     pass.setBindGroup(0, this.lruCacheBG);
-    // Make sure to round up dispatch size to not miss any task if
-    // cache size is not divisible by 32
-    pass.dispatch(Math.ceil(this.cacheSize / 32.0), 1, 1);
+    // TODO: Probably should be chunked to handle very large volumes again
+    pass.dispatch(this.cacheSize / 32, 1, 1);
 
-    pass.setPipeline(this.markNewItemsPipeline);
-    pass.setBindGroup(0, this.lruCacheBG);
-    pass.setBindGroup(1, markNewItemsBG);
-    pass.dispatch(Math.ceil(this.totalElements / 32.0), 1, 1);
+    {
+        var totalWorkGroups = this.alignedTotalElements / 32;
+        var pushConstants = buildPushConstantsBuffer(this.device, totalWorkGroups);
+        var pushConstantsBG = this.device.createBindGroup({
+            layout: this.pushConstantsBGLayout,
+            entries: [{
+                binding: 0,
+                resource: {
+                    buffer: pushConstants.gpuBuffer,
+                    size: 8,
+                }
+            }]
+        });
+
+        pass.setPipeline(this.markNewItemsPipeline);
+        pass.setBindGroup(0, this.lruCacheBG);
+        pass.setBindGroup(1, markNewItemsBG);
+        for (var i = 0; i < pushConstants.nOffsets; ++i) {
+            pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+            pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+        }
+    }
 
     // We need a kernel to copy the slotAvailable member out of the structs instead of using
     // copyBufferToBuffer, since it's stored AoS to reduce our buffer use
     pass.setPipeline(this.extractSlotAvailablePipeline);
     pass.setBindGroup(1, this.outputSlotAvailableBG);
-    pass.dispatch(this.cacheSize, 1, 1);
+    pass.dispatch(this.cacheSize / 32, 1, 1);
 
-    pass.endPass();
+    pass.end();
     commandEncoder.copyBufferToBuffer(
         this.needsCaching, 0, this.needsCachingOffsets, 0, this.totalElements * 4);
 
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
     var end = performance.now();
-    console.log(`Initial aging and mark new items took ${end - start}ms`);
+    // console.log(`Initial aging and mark new items took ${end - start}ms`);
     perfTracker.lruMarkNewItems.push(end - start);
 
     uploadBuf.destroy();
@@ -380,13 +428,12 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     var start = performance.now();
     var numNewItems = await this.scanNeededSlots.scan(this.totalElements);
     var end = performance.now();
-    console.log(`Scan needed slots took ${end - start}ms`);
+    // console.log(`Scan needed slots took ${end - start}ms`);
     perfTracker.lruScanNeededSlots.push(end - start);
     perfTracker.lruNumNewItems.push(numNewItems);
 
     if (numNewItems == 0) {
-        console.log("No new items");
-        console.log("------");
+        // console.log("------");
         // Push 0's for unexecuted steps
         perfTracker.lruCompactNewItems.push(0);
         perfTracker.lruScanSlotsAvailable.push(0);
@@ -398,7 +445,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         perfTracker.lruWriteNewItems.push(0);
         return [0, undefined];
     }
-    console.log(`num new items ${numNewItems}`);
+    // console.log(`num new items ${numNewItems}`);
 
     // Compact the IDs of the elements we need into a list of new elements we'll add
     var newItemIDs = this.device.createBuffer({
@@ -410,7 +457,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     await this.streamCompact.compactActiveIDs(
         this.totalElements, this.needsCaching, this.needsCachingOffsets, newItemIDs);
     var end = performance.now();
-    console.log(`Compact new item ids took ${end - start}ms`);
+    // console.log(`Compact new item ids took ${end - start}ms`);
     perfTracker.lruCompactNewItems.push(end - start);
 
     // Scan the slotAvailable buffer to get a count of the slots we currently
@@ -419,8 +466,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     var start = performance.now();
     var numSlotsAvailable = await this.slotAvailableScanner.scan(this.cacheSize);
     var end = performance.now();
-    console.log(`slots available ${numSlotsAvailable}`);
-    console.log(`Scan slots available took ${end - start}ms`);
+    // console.log(`Scan slots available took ${end - start}ms`);
     perfTracker.lruScanSlotsAvailable.push(end - start);
     perfTracker.lruNumSlotsAvailable.push(numSlotsAvailable);
 
@@ -440,6 +486,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         var newSize =
             Math.min(this.cacheSize + Math.ceil((numNewItems - numSlotsAvailable) * 1.5),
                      this.totalElements);
+        newSize = alignTo(newSize, 32);
 
         var slotData = this.device.createBuffer({
             size: newSize * 4 * 3,
@@ -482,12 +529,6 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
                         buffer: slotData,
                     },
                 },
-                {
-                    binding: 3,
-                    resource: {
-                        buffer: this.cacheSizeBuf,
-                    }
-                }
             ],
         });
 
@@ -507,8 +548,10 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.cacheInitPipeline);
         pass.setBindGroup(0, this.lruCacheBG);
-        pass.dispatch(newSize - this.cacheSize, 1, 1);
-        pass.endPass();
+        pass.setBindGroup(1, this.cacheInitBG);
+        // Probably needs to chunk for very large volumes
+        pass.dispatch((newSize - this.cacheSize) / 32, 1, 1);
+        pass.end();
 
         // Copy in the old contents of the buffers to the new ones
         commandEncoder.copyBufferToBuffer(
@@ -550,8 +593,8 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         pass.setPipeline(this.extractSlotAvailablePipeline);
         pass.setBindGroup(0, this.lruCacheBG);
         pass.setBindGroup(1, this.outputSlotAvailableBG);
-        pass.dispatch(newSize, 1, 1);
-        pass.endPass();
+        pass.dispatch(newSize / 32, 1, 1);
+        pass.end();
 
         this.device.queue.submit([commandEncoder.finish()]);
 
@@ -559,14 +602,12 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         this.slotAvailableScanner = this.scanPipeline.prepareGPUInput(
             this.slotAvailableOffsets, this.scanPipeline.getAlignedSize(newSize));
         var end = performance.now();
-        console.log(`cache resize took ${end - startGrow}ms`);
+        // console.log(`cache resize took ${end - startGrow}ms`);
 
-        console.log(`prev avail ${numSlotsAvailable}`);
         var start = performance.now();
         numSlotsAvailable = await this.slotAvailableScanner.scan(newSize);
         var end = performance.now();
-        console.log(`new avail ${numSlotsAvailable}`);
-        console.log(`Scan new cache took ${end - start}ms`);
+        // console.log(`Scan new cache took ${end - start}ms`);
 
         perfTracker.lruGrowCache.push(end - startGrow);
         this.cacheSize = newSize;
@@ -589,19 +630,19 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     pass.setPipeline(this.extractSlotAvailablePipeline);
     pass.setBindGroup(0, this.lruCacheBG);
     pass.setBindGroup(1, this.outputSlotAvailableForCompact);
-    pass.dispatch(this.cacheSize, 1, 1);
-    pass.endPass();
+    // Probably needs to chunk for very large volumes
+    pass.dispatch(this.cacheSize / 32, 1, 1);
+    pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
-    await this.device.queue.onSubmittedWorkDone();
+    // I don't think we need an await here since it's all on the same queue
+    // await this.device.queue.onSubmittedWorkDone();
 
     await this.streamCompact.compactActiveIDs(this.cacheSize,
                                               this.slotAvailableForCompact,
                                               this.slotAvailableOffsets,
                                               this.slotAvailableIDs);
     var end = performance.now();
-    console.log(`num Available ${numSlotsAvailable}`);
-    console.log(`cache size ${this.cacheSize}`);
-    console.log(`Compact available slot IDs took ${end - start}ms`);
+    // console.log(`Compact available slot IDs took ${end - start}ms`);
     perfTracker.lruCompactAvailableSlots.push(end - start);
 
     var start = performance.now();
@@ -627,6 +668,26 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         ],
     });
 
+    var numSlotsAvailableBuf = this.device.createBuffer(
+        {size: 4, usage: GPUBufferUsage.UNIFORM, mappedAtCreation: true});
+    {
+        var uploadArray = new Uint32Array(numSlotsAvailableBuf.getMappedRange());
+        uploadArray[0] = numSlotsAvailable;
+        numSlotsAvailableBuf.unmap();
+    }
+
+    var outputAgeBGSize = this.device.createBindGroup({
+        layout: this.singleUniformBGLayout,
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: numSlotsAvailableBuf,
+                },
+            },
+        ],
+    });
+
     var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(
         this.slotAvailableIDs, 0, sortedIDs, 0, numSlotsAvailable * 4);
@@ -635,18 +696,19 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     pass.setPipeline(this.copyAvailableSlotAgePipeline);
     pass.setBindGroup(0, this.lruCacheBG);
     pass.setBindGroup(1, outputAgeBG);
-    pass.dispatch(numSlotsAvailable, 1, 1);
-    pass.endPass();
+    pass.setBindGroup(2, outputAgeBGSize);
+    pass.dispatch(Math.ceil(numSlotsAvailable / 32), 1, 1);
+    pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
     var end = performance.now();
-    console.log(`Prep key/value pairs for sort: ${end - start}ms`);
+    // console.log(`Prep key/value pairs for sort: ${end - start}ms`);
     perfTracker.lruPrepKeyValue.push(end - start);
 
     var start = performance.now();
     await this.sorter.sort(slotKeys, sortedIDs, numSlotsAvailable, true);
     var end = performance.now();
-    console.log(`Sorting ${numSlotsAvailable} ages/slots took ${end - start}ms`);
+    // console.log(`Sorting ${numSlotsAvailable} ages/slots took ${end - start}ms`);
     perfTracker.lruTotalSortTime.push(end - start);
 
     // Update the bindgroup
@@ -671,12 +733,6 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
                     buffer: this.slotData,
                 },
             },
-            {
-                binding: 3,
-                resource: {
-                    buffer: this.cacheSizeBuf,
-                }
-            }
         ],
     });
 
@@ -692,6 +748,26 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         ],
     });
 
+    var numNewItemsBuf = this.device.createBuffer(
+        {size: 4, usage: GPUBufferUsage.UNIFORM, mappedAtCreation: true});
+    {
+        var uploadArray = new Uint32Array(numNewItemsBuf.getMappedRange());
+        uploadArray[0] = numNewItems;
+        numNewItemsBuf.unmap();
+    }
+
+    var numNewItemsBG = this.device.createBindGroup({
+        layout: this.singleUniformBGLayout,
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: numNewItemsBuf,
+                },
+            },
+        ],
+    });
+
     var start = performance.now();
     // Update the slot item IDs with the new items which will be stored in the cache
     var commandEncoder = this.device.createCommandEncoder();
@@ -699,18 +775,20 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     pass.setPipeline(this.cacheUpdatePipeline);
     pass.setBindGroup(0, sortedSlotsBG);
     pass.setBindGroup(1, cacheUpdateBG);
-    pass.dispatch(numNewItems, 1, 1);
-    pass.endPass();
+    pass.setBindGroup(2, numNewItemsBG);
+    // TODO: Probably needs to chunk for large volumes
+    pass.dispatch(Math.ceil(numNewItems / 32), 1, 1);
+    pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
     var end = performance.now();
-    console.log(`Writing new item slots took ${end - start}ms`);
+    // console.log(`Writing new item slots took ${end - start}ms`);
     perfTracker.lruWriteNewItems.push(end - start);
 
     slotKeys.destroy();
     sortedIDs.destroy();
 
-    console.log("------");
+    // console.log("------");
     // Return the list of blocks which need to be decompressed into the cache
     // The location to write them is found in cachedItemSlots[itemID]
     return [numNewItems, newItemIDs];
@@ -733,8 +811,9 @@ LRUCache.prototype.reset = async function() {
     var pass = commandEncoder.beginComputePass();
     pass.setPipeline(this.cacheInitPipeline);
     pass.setBindGroup(0, this.lruCacheBG);
-    pass.dispatch(this.cacheSize, 1, 1);
-    pass.endPass();
+    pass.setBindGroup(1, this.cacheInitBG);
+    pass.dispatch(this.cacheSize / 32, 1, 1);
+    pass.end();
 
     // Also need to clear the cached item slots array, just copy the slot item
     // ID array over it, which is also filled with -1

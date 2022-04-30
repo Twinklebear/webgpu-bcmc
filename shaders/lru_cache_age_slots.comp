@@ -6,7 +6,7 @@ layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 void main(void)
 {
-    if (gl_GlobalInvocationID.x < cache_size) {
-        slot_data[gl_GlobalInvocationID.x].age += 1;
-    }
+    slot_data[gl_GlobalInvocationID.x].age += 1;
 }
+
+

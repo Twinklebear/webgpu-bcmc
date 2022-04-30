@@ -27,11 +27,5 @@ layout(set = 0, binding = 2, std430) buffer SlotData
     Slot slot_data[];
 };
 
-layout(set = 0, binding = 3, std140) uniform CacheSize
-{
-    uint cache_size;
-    uint total_elements;
-};
-
 #endif
 

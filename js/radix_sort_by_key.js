@@ -143,8 +143,7 @@ RadixSorter.prototype.getAlignedSize = function(size) {
     return chunkCount * SortChunkSize;
 };
 
-// Input buffers are assumed to be of size "alignedSize" and must have
-// storage, copy_dst, copy_src usage
+// Input buffers are assumed to be of size "alignedSize"
 RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
     // Has to be a pow2 * chunkSize elements, since we do log_2 merge steps up
     var chunkCount = nextPow2(Math.ceil(size / SortChunkSize));
@@ -299,7 +298,7 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
     pass.setBindGroup(0, infoBindGroup);
     pass.setBindGroup(1, radixSortBG);
     pass.dispatch(chunkCount, 1, 1);
-    pass.endPass();
+    pass.end();
 
     // Merge the chunks up
     var pass = commandEncoder.beginComputePass();
@@ -323,7 +322,7 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
         pass.setBindGroup(2, numWorkGroupsBG);
         pass.dispatch(chunkCount / (2 << i), 1, 1);
     }
-    pass.endPass();
+    pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
 
     var commandEncoder = this.device.createCommandEncoder();
@@ -333,7 +332,7 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
         pass.setBindGroup(0, infoBindGroup);
         pass.setBindGroup(1, reverseBG);
         pass.dispatch(Math.ceil(chunkCount / 2), 1, 1);
-        pass.endPass();
+        pass.end();
     }
 
     var readbackOffset = reverse ? alignedSize - size : 0;

@@ -2,6 +2,7 @@
 
 #include "lru_cache_inputs.comp"
 
+// TODO: can use a larger thread group size
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 1, binding = 0, std430) readonly buffer ItemNeeded
@@ -16,25 +17,29 @@ layout(set = 1, binding = 1, std430) buffer ItemNeedsCaching
     uint item_needs_caching[];
 };
 
+layout(set = 2, binding = 0, std140) uniform PushConstants
+{
+    uint global_idx_offset;
+    uint num_work_items;
+};
+
 void main(void)
 {
     const uint idx = gl_GlobalInvocationID.x;
-    if (idx < total_elements) {
-        const int slot = cached_item_slot[idx];
-        if (slot >= 0) {
-            item_needs_caching[idx] = 0;
-            if (item_needed[idx] == 1) {
-                // Item is already cached, reset age and unset slot availability
-                slot_data[slot].age = 0;
-                slot_data[slot].available = 0;
-            } else {
-                slot_data[slot].available = 1;
-            }
+    const int slot = cached_item_slot[idx];
+    if (slot >= 0) {
+        item_needs_caching[idx] = 0;
+        if (item_needed[idx] == 1) {
+            // Item is already cached, reset age and unset slot availability
+            slot_data[slot].age = 0;
+            slot_data[slot].available = 0;
         } else {
-            // Item is not cached, just pass through whether we need the item or not
-            // to tell us if we need to cache it
-            item_needs_caching[idx] = item_needed[idx];
+            slot_data[slot].available = 1;
         }
+    } else {
+        // Item is not cached, just pass through whether we need the item or not
+        // to tell us if we need to cache it
+        item_needs_caching[idx] = item_needed[idx];
     }
 }
 
