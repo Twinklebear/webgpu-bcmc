@@ -4,10 +4,12 @@ import sys
 import os
 import subprocess
 
-if len(sys.argv) < 2:
-    print("Usage <glslc>")
+if len(sys.argv) < 3:
+    print("Usage <glslc> <tint>")
 
 glslc = sys.argv[1]
+tint = sys.argv[2]
+
 output = "embedded_shaders.js"
 shaders = [
     "prefix_sum.comp",
@@ -32,7 +34,11 @@ shaders = [
     "display_render.vert",
     "display_render.frag",
     "reset_rays.comp",
-    "mark_block_active.comp",
+    # Must be manually ported to WGSL since it uses atomics
+    # Tint cannot translate atomics from SPV -> WGSL due to
+    # - https://bugs.chromium.org/p/tint/issues/detail?id=1207
+    # - https://bugs.chromium.org/p/tint/issues/detail?id=1441
+    #"mark_block_active.comp",
     "reset_block_active.comp",
     "reset_block_num_rays.comp",
     "debug_view_rays_per_block.comp",
@@ -60,9 +66,10 @@ for shader in shaders:
     var_name = "{}_{}_spv".format(fname, ext[1:])
     print("Embedding {} as {}".format(shader, var_name))
     args = [
-        "python",
+        "python3",
         "compile_shader.py",
         glslc,
+        tint,
         shader,
         var_name,
         "-DBLOCK_SIZE={}".format(block_size),
@@ -71,6 +78,8 @@ for shader in shaders:
     if draw_fog:
         args.append("-DDRAW_FOG=1")
     compiled_shaders += subprocess.check_output(args).decode("utf-8")
+
+# TODO: Read and append hand port of mark_block_active.comp to embed the WGSL shader
 
 with open(output, "w") as f:
     f.write("const ScanBlockSize = {};\n".format(block_size))

@@ -18,11 +18,12 @@ layout(set = 1, binding = 1, std430) buffer ItemNeedsCaching
 
 void main(void)
 {
-    if (gl_GlobalInvocationID.x < total_elements) {
-        const int slot = cached_item_slot[gl_GlobalInvocationID.x];
+    const uint idx = gl_GlobalInvocationID.x;
+    if (idx < total_elements) {
+        const int slot = cached_item_slot[idx];
         if (slot >= 0) {
-            item_needs_caching[gl_GlobalInvocationID.x] = 0;
-            if (item_needed[gl_GlobalInvocationID.x] == 1) {
+            item_needs_caching[idx] = 0;
+            if (item_needed[idx] == 1) {
                 // Item is already cached, reset age and unset slot availability
                 slot_data[slot].age = 0;
                 slot_data[slot].available = 0;
@@ -32,7 +33,7 @@ void main(void)
         } else {
             // Item is not cached, just pass through whether we need the item or not
             // to tell us if we need to cache it
-            item_needs_caching[gl_GlobalInvocationID.x] = item_needed[gl_GlobalInvocationID.x];
+            item_needs_caching[idx] = item_needed[idx];
         }
     }
 }
