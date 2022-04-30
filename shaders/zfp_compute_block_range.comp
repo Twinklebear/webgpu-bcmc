@@ -12,6 +12,11 @@ layout(set = 0, binding = 2, std430) buffer BlockInformation
     BlockRange block_ranges[];
 };
 
+layout(set = 1, binding = 0, std140) uniform BlockIDOffset
+{
+    uint block_id_offset;
+};
+
 const uvec3 index_to_vertex[8] = {
     uvec3(0, 0, 0), // v000 = 0
     uvec3(1, 0, 0), // v100 = 1
@@ -25,7 +30,7 @@ const uvec3 index_to_vertex[8] = {
 
 void main(void)
 {
-    const uint block_index = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+    const uint block_index = gl_GlobalInvocationID.x + block_id_offset;
     const uint total_blocks = padded_dims.x * padded_dims.y * padded_dims.z / 64;
 
     if (block_index >= total_blocks) {

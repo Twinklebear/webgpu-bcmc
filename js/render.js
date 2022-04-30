@@ -1,10 +1,18 @@
 (async () => {
     var adapter = await navigator.gpu.requestAdapter();
+    console.log(adapter.limits);
 
-    var device = await adapter.requestDevice();
+    var gpuDeviceDesc = {
+        requiredLimits: {
+            maxStorageBuffersPerShaderStage: adapter.limits.maxStorageBuffersPerShaderStage,
+            maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+        },
+    };
+    var device = await adapter.requestDevice(gpuDeviceDesc);
+    console.log(`max wg = ${device.limits.maxComputeWorkgroupsPerDimension}`);
 
     var canvas = document.getElementById("webgpu-canvas");
-    var context = canvas.getContext("gpupresent");
+    var context = canvas.getContext("webgpu");
 
     var dataset = datasets.skull;
     if (window.location.hash) {
@@ -23,7 +31,7 @@
         volumeURL = "/models/" + zfpDataName;
     }
     var compressedData =
-        await fetch(volumeURL).then((res) => res.arrayBuffer().then(function (arr) {
+        await fetch(volumeURL).then((res) => res.arrayBuffer().then(function(arr) {
             return new Uint8Array(arr);
         }));
 
@@ -87,7 +95,7 @@
     var cameraChanged = true;
 
     var controller = new Controller();
-    controller.mousemove = function (prev, cur, evt) {
+    controller.mousemove = function(prev, cur, evt) {
         if (evt.buttons == 1) {
             cameraChanged = true;
             camera.rotate(prev, cur);
@@ -100,14 +108,14 @@
             totalTimeMS = 0;
         }
     };
-    controller.wheel = function (amt) {
+    controller.wheel = function(amt) {
         cameraChanged = true;
         camera.zoom(amt * 0.05);
         numFrames = 0;
         totalTimeMS = 0;
     };
     controller.pinch = controller.wheel;
-    controller.twoFingerDrag = function (drag) {
+    controller.twoFingerDrag = function(drag) {
         cameraChanged = true;
         camera.pan(drag);
         numFrames = 0;
@@ -115,7 +123,7 @@
     };
     controller.registerForCanvas(canvas);
 
-    var animationFrame = function () {
+    var animationFrame = function() {
         var resolve = null;
         var promise = new Promise((r) => (resolve = r));
         window.requestAnimationFrame(resolve);
@@ -135,40 +143,42 @@
      * the corresponding texel from the render to show on the screen
      */
     var swapChainFormat = "bgra8unorm";
-    var swapChain = context.configureSwapChain({
-        device: device,
-        format: swapChainFormat,
-        usage: GPUTextureUsage.RENDER_ATTACHMENT,
-    });
+    context.configure(
+        {device: device, format: swapChainFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT});
 
-    var vertModule = device.createShaderModule({ code: display_render_vert_spv });
-    var fragModule = device.createShaderModule({ code: display_render_frag_spv });
+    var vertModule = device.createShaderModule({code: display_render_vert_spv});
+    var fragModule = device.createShaderModule({code: display_render_frag_spv});
 
     var renderBGLayout = device.createBindGroupLayout({
         entries: [{
             binding: 0,
             visibility: GPUShaderStage.FRAGMENT,
-            storageTexture: { access: "read-only", format: "rgba8unorm" }
+            storageTexture: {access: "read-only", format: "rgba8unorm"}
         }]
     });
 
     var renderPipeline = device.createRenderPipeline({
-        layout: device.createPipelineLayout({ bindGroupLayouts: [renderBGLayout] }),
+        layout: device.createPipelineLayout({bindGroupLayouts: [renderBGLayout]}),
         vertex: {
             module: vertModule,
             entryPoint: "main",
         },
         fragment:
-            { module: fragModule, entryPoint: "main", targets: [{ format: swapChainFormat }] }
+            {module: fragModule, entryPoint: "main", targets: [{format: swapChainFormat}]}
     });
 
     var renderPipelineBG = device.createBindGroup({
         layout: renderBGLayout,
-        entries: [{ binding: 0, resource: volumeRC.renderTarget.createView() }]
+        entries: [{binding: 0, resource: volumeRC.renderTarget.createView()}]
     });
 
     var renderPassDesc = {
-        colorAttachments: [{ attachment: undefined, loadValue: [0.3, 0.3, 0.3, 1] }],
+        colorAttachments: [{
+            view: undefined,
+            loadOp: "clear",
+            clearValue: [0.3, 0.3, 0.3, 1],
+            storeOp: "store"
+        }],
     };
 
     var currentBenchmark = null;
@@ -242,7 +252,8 @@
             await volumeRC.lruCache.reset();
         }
 
-        if (isovalueSlider.value != currentIsovalue || LODSlider.value != currentLOD || requestRecompute) {
+        if (isovalueSlider.value != currentIsovalue || LODSlider.value != currentLOD ||
+            requestRecompute) {
             recomputeSurface = true;
             currentIsovalue = parseFloat(isovalueSlider.value);
             currentLOD = parseInt(LODSlider.value);
@@ -283,7 +294,10 @@
             var end = performance.now();
             if (document.getElementById("outputImages").checked) {
                 var commandEncoder = device.createCommandEncoder();
-                commandEncoder.copyTextureToBuffer({ texture: volumeRC.renderTarget }, { buffer: imageBuffer, bytesPerRow: canvas.width * 4 }, [canvas.width, canvas.height, 1]);
+                commandEncoder.copyTextureToBuffer(
+                    {texture: volumeRC.renderTarget},
+                    {buffer: imageBuffer, bytesPerRow: canvas.width * 4},
+                    [canvas.width, canvas.height, 1]);
                 device.queue.submit([commandEncoder.finish()]);
                 await device.queue.onSubmittedWorkDone();
                 await imageBuffer.mapAsync(GPUMapMode.READ);
@@ -296,7 +310,10 @@
                     imgData.data[i] = outputArray[i];
                 }
                 context.putImageData(imgData, 0, 0);
-                outCanvas.toBlob(function (b) { saveAs(b, `${dataset.name.substring(0, 5)}_pass_${volumeRC.numPasses}.png`); }, "image/png");
+                outCanvas.toBlob(function(b) {
+                    saveAs(b,
+                           `${dataset.name.substring(0, 5)}_pass_${volumeRC.numPasses}.png`);
+                }, "image/png");
                 imageBuffer.unmap();
             }
             averageComputeTime = Math.round(volumeRC.totalPassTime / volumeRC.numPasses);
@@ -306,14 +323,14 @@
         // Blit the image rendered by the raycaster onto the screen
         var commandEncoder = device.createCommandEncoder();
 
-        renderPassDesc.colorAttachments[0].view = swapChain.getCurrentTexture().createView();
+        renderPassDesc.colorAttachments[0].view = context.getCurrentTexture().createView();
         var renderPass = commandEncoder.beginRenderPass(renderPassDesc);
 
         renderPass.setPipeline(renderPipeline);
         renderPass.setBindGroup(0, renderPipelineBG);
         // Draw a full screen quad
         renderPass.draw(6, 1, 0, 0);
-        renderPass.endPass();
+        renderPass.end();
         device.queue.submit([commandEncoder.finish()]);
 
         // Measure render time by waiting for the work done

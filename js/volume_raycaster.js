@@ -10,7 +10,7 @@ var VolumeRaycaster = function(device, canvas) {
 
     // Max dispatch size for more computationally heavy kernels
     // which might hit TDR on lower power devices
-    this.maxDispatchSize = 512000;
+    this.maxDispatchSize = device.limits.maxComputeWorkgroupsPerDimension;
 
     this.numActiveBlocksStorage = 0;
 
@@ -48,10 +48,17 @@ var VolumeRaycaster = function(device, canvas) {
             },
         ],
     });
-
+    this.computeBlockRangeS1B0DynamicBGLayout = device.createBindGroupLayout({
+        entries: [{
+            binding: 0,
+            visibility: GPUShaderStage.COMPUTE,
+            buffer: {type: "uniform", hasDynamicOffset: true}
+        }]
+    });
     this.computeBlockRangePipeline = device.createComputePipeline({
         layout: device.createPipelineLayout({
-            bindGroupLayouts: [this.computeBlockRangeBGLayout],
+            bindGroupLayouts:
+                [this.computeBlockRangeBGLayout, this.computeBlockRangeS1B0DynamicBGLayout],
         }),
         compute: {
             module: device.createShaderModule({
@@ -664,7 +671,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
         usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
     });
 
-    await this.computeBlockRanges();
+    await this.computeBlockaanges();
 
     this.blockActiveBuffer = this.device.createBuffer(
         {size: 4 * this.totalBlocks, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC});
@@ -835,6 +842,7 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
     // it's a bit easier to just do it here
     // Decompress each block and compute its value range, output to the blockRangesBuffer
     this.blockRangesBuffer = this.device.createBuffer({
+        // Why is this 10 4byte vals?
         size: this.totalBlocks * 10 * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
@@ -863,15 +871,28 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
         ],
     });
 
+    const groupThreadCount = 32;
+    var totalWorkGroups = Math.ceil(this.totalBlocks / groupThreadCount);
+
+    var pushConstants = buildPushConstantsBuffer(this.device, totalWorkGroups);
+
+    var blockIDOffsetBG = this.device.createBindGroup({
+        layout: this.computeBlockRangeS1B0DynamicBGLayout,
+        entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+    });
+
     var commandEncoder = this.device.createCommandEncoder();
     var pass = commandEncoder.beginComputePass();
 
     // Decompress each block and compute its range
     pass.setPipeline(this.computeBlockRangePipeline);
     pass.setBindGroup(0, bindGroup);
-    pass.dispatch(this.numWorkGroups, 1, 1);
+    for (var i = 0; i < pushConstants.nOffsets; ++i) {
+        pass.setBindGroup(1, blockIDOffsetBG, pushConstants.dynamicOffsets, i, 1);
+        pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+    }
 
-    pass.endPass();
+    pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
 };
 
