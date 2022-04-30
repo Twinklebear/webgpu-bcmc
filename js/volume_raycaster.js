@@ -207,7 +207,8 @@ var VolumeRaycaster = function(device, canvas) {
     this.renderTarget = this.device.createTexture({
         size: [this.canvas.width, this.canvas.height, 1],
         format: renderTargetFormat,
-        usage: GPUTextureUsage.STORAGE | GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
+        usage: GPUTextureUsage.STORAGE | GPUTextureUsage.RENDER_ATTACHMENT |
+                   GPUTextureUsage.COPY_SRC
     });
 
     this.renderTargetDebugBGLayout = this.device.createBindGroupLayout({
@@ -373,7 +374,7 @@ var VolumeRaycaster = function(device, canvas) {
             bindGroupLayouts: [this.markBlockActiveBGLayout, this.renderTargetDebugBGLayout]
         }),
         compute: {
-            module: device.createShaderModule({code: mark_block_active_comp_spv}),
+            module: device.createShaderModule({code: mark_block_active_wgsl_spv}),
             entryPoint: "main"
         }
     });
