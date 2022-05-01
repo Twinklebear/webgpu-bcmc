@@ -51,6 +51,24 @@ var StreamCompact = function(device) {
             entryPoint: "main",
         },
     });
+
+    this.dataBGLayout = device.createBindGroupLayout({
+        entries: [{
+            binding: 0,
+            visibility: GPUShaderStage.COMPUTE,
+            buffer: {
+                type: "storage",
+            }
+        }]
+    });
+    this.streamCompactDataPipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout(
+            {bindGroupLayouts: [this.streamCompactBGLayout, this.dataBGLayout]}),
+        compute: {
+            module: device.createShaderModule({code: stream_compact_data_comp_spv}),
+            entryPoint: "main",
+        }
+    });
 };
 
 StreamCompact.prototype.compactActiveIDs =
@@ -157,6 +175,77 @@ StreamCompact.prototype.compactActiveIDs =
             });
         }
         pass.setBindGroup(0, streamCompactBG);
+        pass.dispatch(numWorkGroups, 1, 1);
+    }
+    pass.end();
+    this.device.queue.submit([commandEncoder.finish()]);
+    await this.device.queue.onSubmittedWorkDone();
+};
+
+StreamCompact.prototype.compactActive =
+    async function(numElements, isActiveBuffer, offsetsBuffer, dataBuffer, outputBuffer) {
+    // No push constants in the API? This is really a hassle to hack together
+    // because I also have to obey (at least Dawn's rule is it part of the spec?)
+    // that the dynamic offsets be 256b aligned
+    // Please add push constants!
+    var numChunks = Math.ceil(numElements / this.maxDispatchSize);
+    var compactPassOffset = this.device.createBuffer({
+        size: numChunks * 256,
+        usage: GPUBufferUsage.UNIFORM,
+        mappedAtCreation: true,
+    });
+    {
+        var map = new Uint32Array(compactPassOffset.getMappedRange());
+        for (var i = 0; i < numChunks; ++i) {
+            map[i * 64] = i * this.maxDispatchSize;
+        }
+        compactPassOffset.unmap();
+    }
+
+    var dataBG = this.device.createBindGroup(
+        {layout: this.dataBGLayout, entries: [{binding: 0, resource: {buffer: dataBuffer}}]});
+
+    var commandEncoder = this.device.createCommandEncoder();
+    var pass = commandEncoder.beginComputePass();
+    pass.setPipeline(this.streamCompactDataPipeline);
+    for (var i = 0; i < numChunks; ++i) {
+        var numWorkGroups =
+            Math.min(numElements - i * this.maxDispatchSize, this.maxDispatchSize);
+
+        // Have to create bind groups here because dynamic offsets are not allowed
+        var streamCompactBG = this.device.createBindGroup({
+            layout: this.streamCompactBGLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: {
+                        buffer: isActiveBuffer,
+                    },
+                },
+                {
+                    binding: 1,
+                    resource: {
+                        buffer: offsetsBuffer,
+                    },
+                },
+                {
+                    binding: 2,
+                    resource: {
+                        buffer: compactPassOffset,
+                        size: 4,
+                        offset: i * 256,
+                    },
+                },
+                {
+                    binding: 3,
+                    resource: {
+                        buffer: outputBuffer,
+                    },
+                },
+            ],
+        });
+        pass.setBindGroup(0, streamCompactBG);
+        pass.setBindGroup(1, dataBG);
         pass.dispatch(numWorkGroups, 1, 1);
     }
     pass.end();
