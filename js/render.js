@@ -150,11 +150,8 @@
     var fragModule = device.createShaderModule({code: display_render_frag_spv});
 
     var renderBGLayout = device.createBindGroupLayout({
-        entries: [{
-            binding: 0,
-            visibility: GPUShaderStage.FRAGMENT,
-            storageTexture: {access: "read-only", format: "rgba8unorm"}
-        }]
+        entries:
+            [{binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {viewDimension: "2d"}}]
     });
 
     var renderPipeline = device.createRenderPipeline({

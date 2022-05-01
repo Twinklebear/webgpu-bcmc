@@ -214,8 +214,8 @@ var VolumeRaycaster = function(device, canvas) {
     this.renderTarget = this.device.createTexture({
         size: [this.canvas.width, this.canvas.height, 1],
         format: renderTargetFormat,
-        usage: GPUTextureUsage.STORAGE | GPUTextureUsage.RENDER_ATTACHMENT |
-                   GPUTextureUsage.COPY_SRC
+        usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING |
+                   GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
     });
 
     this.renderTargetDebugBGLayout = this.device.createBindGroupLayout({
@@ -256,8 +256,7 @@ var VolumeRaycaster = function(device, canvas) {
             targets: [
                 {
                     format: renderTargetFormat,
-                    // NOTE: allow writes for debugging
-                    // writeMask: 0,
+                    writeMask: 0,
                 },
             ],
         },
@@ -271,7 +270,9 @@ var VolumeRaycaster = function(device, canvas) {
         colorAttachments: [
             {
                 view: this.renderTarget.createView(),
-                loadValue: [1.0, 1.0, 1.0, 1],
+                loadOp: "clear",
+                clearValue: [1.0, 1.0, 1.0, 1],
+                storeOp: "store"
             },
         ]
     };
@@ -671,7 +672,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
         usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
     });
 
-    await this.computeBlockaanges();
+    await this.computeBlockRanges();
 
     this.blockActiveBuffer = this.device.createBuffer(
         {size: 4 * this.totalBlocks, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC});
@@ -923,7 +924,7 @@ VolumeRaycaster.prototype.renderSurface =
         pass.setPipeline(this.resetBlockActivePipeline);
         pass.setBindGroup(0, this.resetBlockActiveBG);
         pass.dispatch(this.blockGridDims[0], this.blockGridDims[1], this.blockGridDims[2]);
-        pass.endPass();
+        pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
 
         await this.computeInitialRays(viewParamUpload);
@@ -1003,7 +1004,7 @@ VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
     resetRaysPass.setBindGroup(0, this.resetRaysBG);
     resetRaysPass.setPipeline(this.resetRaysPipeline);
     resetRaysPass.dispatch(this.canvas.width, this.canvas.height, 1);
-    resetRaysPass.endPass();
+    resetRaysPass.end();
 
     var initialRaysPass = commandEncoder.beginRenderPass(this.initialRaysPassDesc);
 
@@ -1012,7 +1013,7 @@ VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
     initialRaysPass.setBindGroup(0, this.initialRaysBindGroup);
     initialRaysPass.draw(12 * 3, 1, 0, 0);
 
-    initialRaysPass.endPass();
+    initialRaysPass.end();
     this.device.queue.submit([commandEncoder.finish()]);
 };
 
@@ -1032,7 +1033,7 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     pass.setBindGroup(0, this.macroTraverseBindGroup);
     pass.dispatch(this.canvas.width, this.canvas.height, 1);
 
-    pass.endPass();
+    pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
 };
 
@@ -1070,7 +1071,7 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
         pass.dispatch(this.canvas.width, this.canvas.height, 1);
     }
     */
-    pass.endPass();
+    pass.end();
 
     this.device.queue.submit([commandEncoder.finish()]);
 };
@@ -1095,7 +1096,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     pass.setPipeline(this.writeRayAndBlockIDPipeline);
     pass.setBindGroup(0, this.writeRayAndBlockIDBG);
     pass.dispatch(this.canvas.width, this.canvas.height, 1);
-    pass.endPass();
+    pass.end();
 
     // We scan the rayActiveCompactOffsetBuffer, so copy the ray active information over
     commandEncoder.copyBufferToBuffer(this.rayActiveBuffer,
@@ -1261,7 +1262,7 @@ VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks
     pass.setBindGroup(0, rtBlocksPipelineBG0);
     pass.setBindGroup(1, this.rtBlocksPipelineBG1);
     pass.dispatch(numActiveBlocks, 1, 1);
-    pass.endPass();
+    pass.end();
 
     await this.device.queue.submit([commandEncoder.finish()]);
 };
@@ -1341,7 +1342,7 @@ VolumeRaycaster.prototype.decompressBlocks =
         });
         pass.setBindGroup(1, decompressBlocksStartOffsetBG);
         pass.dispatch(numWorkGroups, 1, 1);
-        pass.endPass();
+        pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
     }
     await this.device.queue.onSubmittedWorkDone();
