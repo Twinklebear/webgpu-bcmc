@@ -372,15 +372,14 @@
             numFrames = 0;
             totalTimeMS = 0;
 
-            // TODO: We'll want to only print this after the benchmark run is done
-            /*
-                  console.log(JSON.stringify(perfResults));
-                  for (const prop in perfResults) {
-                      var sum = perfResults[prop].reduce(function(acc, x) { return acc + x; });
-                      console.log(`${prop} average = ${(sum /
-               perfResults[prop].length).toFixed(3)}`);
-                  }
-                  */
+            console.log(JSON.stringify(perfResults));
+            for (const prop in perfResults) {
+                var sum = perfResults[prop].reduce(function(acc, x) {
+                    return acc + x;
+                });
+                console.log(
+                    `${prop} average = ${(sum / perfResults[prop].length).toFixed(3)}`);
+            }
         }
 
         renderPassDesc.colorAttachments[0].view = context.getCurrentTexture().createView();

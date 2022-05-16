@@ -648,8 +648,8 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
         await this.lruCache.update(this.blockActiveBuffer, perfTracker);
     var end = performance.now();
     this.newDecompressed = nBlocksToDecompress;
-    // console.log(`# Blocks to decompress ${nBlocksToDecompress}`);
-    // console.log(`Cache update took ${end - start}ms`);
+    console.log(`# Blocks to decompress ${nBlocksToDecompress}`);
+    console.log(`Cache update took ${end - start}ms`);
     perfTracker.cacheUpdate.push(end - start);
     perfTracker.numBlocksDecompressed.push(nBlocksToDecompress);
 
@@ -692,7 +692,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
         decompressBlockIDs.destroy();
     }
     var end = performance.now();
-    // console.log(`Block decompression took ${end - start}`);
+    console.log(`Block decompression took ${end - start}`);
     perfTracker.decompression.push(end - start);
 
     // NOTE: we need to keep active block IDs and offsets as well, but as a separate thing
