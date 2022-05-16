@@ -621,7 +621,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
     var start = performance.now();
     var numActiveBlocks = await this.computeActiveBlocks();
     var end = performance.now();
-    // console.log(`Compute active took ${end - start}ms`);
+    console.log(`Compute active took ${end - start}ms`);
 
     perfTracker.computeActiveBlocks.push(end - start);
     perfTracker.numActiveBlocks.push(numActiveBlocks);
@@ -753,7 +753,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
                                               this.blockHasVertsOffsets,
                                               this.blocksWithVertices);
     var end = performance.now();
-    // console.log(`Active blocks w/ verts reduction took ${end - start}ms`);
+    console.log(`Active blocks w/ verts reduction took ${end - start}ms`);
 
     perfTracker.numBlocksWithVertices.push(numBlocksWithVertices);
     perfTracker.compactBlocksWithVertices.push(end - start);
@@ -763,7 +763,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
     var start = performance.now();
     var numVertices = await this.computeBlockVertexCounts();
     var end = performance.now();
-    // console.log(`Vertex count computation took ${end - start}ms`);
+    console.log(`Vertex count computation took ${end - start}ms`);
     perfTracker.numVertices.push(numVertices);
     if (numVertices == 0) {
         perfTracker.computeVertices.push(0);
@@ -800,7 +800,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
     var start = performance.now();
     await this.computeVertices();
     var end = performance.now();
-    // console.log(`Vertex computation took ${end - start}ms`);
+    console.log(`Vertex computation took ${end - start}ms`);
     perfTracker.computeVertices.push(end - start);
 
     // Compute the vertices and output them to the single compacted buffer
@@ -822,7 +822,7 @@ CompressedMarchingCubes.prototype.computeActiveBlocks = async function() {
     var start = performance.now();
     var totalActive = await this.activeBlockScanner.scan(this.totalBlocks);
     var end = performance.now();
-    // console.log(`Active block scan took ${end - start}ms`);
+    console.log(`Active block scan took ${end - start}ms`);
     return totalActive;
 };
 
