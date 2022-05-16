@@ -72,7 +72,7 @@
     isovalueSlider.value = (dataset.range[0] + dataset.range[1]) / 2.0;
     var currentIsovalue = isovalueSlider.value;
 
-    const defaultEye = vec3.set(vec3.create(), 0.0, 0.0, 2.0);
+    const defaultEye = vec3.set(vec3.create(), 0.0, 0.0, 1.0);
     const center = vec3.set(vec3.create(), 0.0, 0.0, 0.0);
     const up = vec3.set(vec3.create(), 0.0, 1.0, 0.0);
     /*
@@ -251,6 +251,7 @@
 
         if (isovalueSlider.value != currentIsovalue || LODSlider.value != currentLOD ||
             requestRecompute) {
+            console.log(`Isovalue = ${isovalueSlider.value}`);
             recomputeSurface = true;
             currentIsovalue = parseFloat(isovalueSlider.value);
             currentLOD = parseInt(LODSlider.value);
