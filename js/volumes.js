@@ -2,6 +2,30 @@ var requestRecompute = false;
 var requestBenchmark = null;
 
 var datasets = {
+    plane_x: {
+        compressionRate: 2,
+        name: "plane_x_32x32x32_float32.gen.crate2",
+        range: [0, 1],
+        scale: [1, 1, 1],
+    },
+    sphere: {
+        compressionRate: 2,
+        name: "sphere_32x32x32_float32.gen.crate2",
+        range: [0, 1],
+        scale: [1, 1, 1],
+    },
+    quarter_sphere: {
+        compressionRate: 2,
+        name: "quarter_sphere_32x32x32_float32.gen.crate2",
+        range: [0, 1],
+        scale: [1, 1, 1],
+    },
+    wavelet: {
+        compressionRate: 2,
+        name: "wavelet_32x32x32_float32.gen.crate2",
+        range: [-3, 3],
+        scale: [1, 1, 1],
+    },
     fuel: {
         compressionRate: 4,
         name: "fuel_64x64x64_uint8.raw.crate4",
