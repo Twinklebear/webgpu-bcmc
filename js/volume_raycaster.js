@@ -72,7 +72,7 @@ var VolumeRaycaster = function(device, canvas) {
         entries: [{
             binding: 0,
             visibility: GPUShaderStage.COMPUTE,
-            buffer: { 
+            buffer: {
                 type: "storage",
             }
         }]
@@ -343,10 +343,7 @@ var VolumeRaycaster = function(device, canvas) {
 
     this.macroTraversePipeline = device.createComputePipeline({
         layout: device.createPipelineLayout({
-            bindGroupLayouts: [
-                this.macroTraverseBGLayout,
-                this.computeVoxelRangeBGLayout
-            ],
+            bindGroupLayouts: [this.macroTraverseBGLayout, this.computeVoxelRangeBGLayout],
         }),
         compute: {
             module: device.createShaderModule({
@@ -1111,27 +1108,52 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
     pass.setBindGroup(1, this.renderTargetDebugBG);
     pass.dispatch(this.canvas.width, this.canvas.height, 1);
 
-    // Debugging: view # rays per block
-    /*
-    {
-        var debugViewBlockRayCountsBG = this.device.createBindGroup({
-            layout: this.debugViewBlockRayCountsBGLayout,
-            entries: [
-                {binding: 0, resource: {buffer: this.volumeInfoBuffer}},
-                {binding: 1, resource: {buffer: this.blockNumRaysBuffer}},
-                {binding: 2, resource: {buffer: this.rayInformationBuffer}},
-                {binding: 3, resource: this.renderTarget.createView()}
-            ]
-        });
-        pass.setPipeline(this.debugViewBlockRayCountsPipeline);
-        pass.setBindGroup(0, debugViewBlockRayCountsBG);
-        pass.dispatch(this.canvas.width, this.canvas.height, 1);
-    }
-    */
     pass.end();
 
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
+
+    // Debugging readback and view the number of rays per block
+    /*
+    {
+        var readbackBlockNumRaysBuffer = this.device.createBuffer({
+            size: 4 * this.totalBlocks,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+        });
+
+        var commandEncoder = this.device.createCommandEncoder();
+        commandEncoder.copyBufferToBuffer(
+            this.blockNumRaysBuffer, 0, readbackBlockNumRaysBuffer, 0, 4 * this.totalBlocks);
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+
+        await readbackBlockNumRaysBuffer.mapAsync(GPUMapMode.READ);
+        var raysPerBlock = new Uint32Array(readbackBlockNumRaysBuffer.getMappedRange());
+
+        var activeBlocks = 0;
+        var avgRaysPerBlock = 0;
+        var minRays = 1e20;
+        var maxRays = 0;
+        for (var i = 0; i < raysPerBlock.length; ++i) {
+            if (raysPerBlock[i] > 0) {
+                activeBlocks += 1;
+                avgRaysPerBlock += raysPerBlock[i];
+                minRays = Math.min(raysPerBlock[i], minRays);
+                maxRays = Math.max(raysPerBlock[i], maxRays);
+            }
+        }
+        if (activeBlocks > 0) {
+            console.log(`RPB Avg rays per block ${
+                avgRaysPerBlock / activeBlocks} (# active = ${activeBlocks})`);
+            console.log(`RPB Min rays per block ${minRays}`);
+            console.log(`RPB Max rays per block ${maxRays}`);
+        }
+
+        readbackBlockNumRaysBuffer.unmap();
+
+        readbackBlockNumRaysBuffer.destroy();
+    }
+    */
 };
 
 // Scan the blockNumRaysBuffer storing the output in blockRayOffsetBuffer and
