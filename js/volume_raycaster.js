@@ -977,6 +977,9 @@ VolumeRaycaster.prototype.renderSurface =
         console.log(`Raytrace blocks: ${end - start}ms`);
         console.log(`PASS TOOK: ${end - startPass}ms`);
         console.log(`++++++++++`);
+
+        // TODO: Here we could re-count # of rays active and sort out the rays that finished in
+        // this pass
     }
     this.totalPassTime += end - startPass;
     this.numPasses += 1;
