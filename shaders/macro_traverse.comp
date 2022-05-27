@@ -32,6 +32,11 @@ layout(set = 0, binding = 3, std430) buffer RayInformation
 
 uniform layout(set = 0, binding = 4, rgba8) writeonly image2D render_target;
 
+layout(set = 1, binding = 0, std430) buffer VoxelInformation
+{
+    vec2 voxel_ranges[];
+};
+
 vec4 block_id_to_color(const uvec3 block_id) {
     const vec3 n_blocks = padded_dims.xyz / uvec3(4);
     return vec4(vec3(block_id) / n_blocks, 1.0);
@@ -60,7 +65,7 @@ void main() {
     grid_ray_dir *= 0.25;
 
     float t_current = rays[ray_index].t;
-	vec3 p = (vol_eye + t_current * grid_ray_dir);
+	vec3 p = (vol_eye + (t_current + 0.01) * grid_ray_dir);
     p = clamp(p, vec3(0), vec3(macrogrid_dims - 1));
 
     const vec3 inv_grid_ray_dir = 1.0 / grid_ray_dir;
@@ -86,24 +91,7 @@ void main() {
         // Value range for a block is it's range combined with that of its neighbors to
         // the positive side 
         uint block_id = block_pos.x + n_blocks.x * (block_pos.y + n_blocks.y * block_pos.z);
-        vec2 cell_range = block_ranges[block_id].range;
-        for (int k = 0; k < 2; ++k) {
-            for (int j = 0; j < 2; ++j) {
-                for (int i = 0; i < 2; ++i) {
-                    const uvec3 neighbor = uvec3(i, j, k); 
-                    const uvec3 coords = block_pos + neighbor;
-                    if (neighbor == uvec3(0) || any(lessThan(coords, uvec3(0)))
-                            || any(greaterThanEqual(coords, n_blocks)))
-                    {
-                        continue;
-                    }
-                    // TODO: use fcn
-                    const uint neighbor_id = coords.x + n_blocks.x * (coords.y + n_blocks.y * coords.z);
-                    cell_range.x = min(block_ranges[neighbor_id].range.x, cell_range.x);
-                    cell_range.y = max(block_ranges[neighbor_id].range.y, cell_range.y);
-                }
-            }
-        }
+        vec2 cell_range = voxel_ranges[block_id];
 
         if (isovalue >= cell_range.x && isovalue <= cell_range.y) {
             rays[ray_index].block_id = block_id;

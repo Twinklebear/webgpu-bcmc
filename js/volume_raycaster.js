@@ -68,6 +68,31 @@ var VolumeRaycaster = function(device, canvas) {
         },
     });
 
+    this.computeVoxelRangeBGLayout = device.createBindGroupLayout({
+        entries: [{
+            binding: 0,
+            visibility: GPUShaderStage.COMPUTE,
+            buffer: { 
+                type: "storage",
+            }
+        }]
+    });
+    this.computeVoxelRangePipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout({
+            bindGroupLayouts: [
+                this.computeBlockRangeBGLayout,
+                this.computeBlockRangeS1B0DynamicBGLayout,
+                this.computeVoxelRangeBGLayout
+            ]
+        }),
+        compute: {
+            module: device.createShaderModule({
+                code: compute_voxel_range_comp_spv,
+            }),
+            entryPoint: "main",
+        }
+    });
+
     this.decompressBlocksBGLayout = device.createBindGroupLayout({
         entries: [
             {
@@ -320,6 +345,7 @@ var VolumeRaycaster = function(device, canvas) {
         layout: device.createPipelineLayout({
             bindGroupLayouts: [
                 this.macroTraverseBGLayout,
+                this.computeVoxelRangeBGLayout
             ],
         }),
         compute: {
@@ -844,7 +870,12 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
     // Decompress each block and compute its value range, output to the blockRangesBuffer
     this.blockRangesBuffer = this.device.createBuffer({
         // Why is this 10 4byte vals?
+        // 8 corner values plus 2 range values
         size: this.totalBlocks * 10 * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+    this.voxelRangesBuffer = this.device.createBuffer({
+        size: this.totalBlocks * 2 * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
 
@@ -871,6 +902,17 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
             },
         ],
     });
+    this.voxelBindGroup = this.device.createBindGroup({
+        layout: this.computeVoxelRangeBGLayout,
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: this.voxelRangesBuffer,
+                },
+            },
+        ]
+    });
 
     const groupThreadCount = 32;
     var totalWorkGroups = Math.ceil(this.totalBlocks / groupThreadCount);
@@ -888,6 +930,15 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
     // Decompress each block and compute its range
     pass.setPipeline(this.computeBlockRangePipeline);
     pass.setBindGroup(0, bindGroup);
+    for (var i = 0; i < pushConstants.nOffsets; ++i) {
+        pass.setBindGroup(1, blockIDOffsetBG, pushConstants.dynamicOffsets, i, 1);
+        pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+    }
+
+    // Compute each block's range including its neighbors
+    pass.setPipeline(this.computeVoxelRangePipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.setBindGroup(2, this.voxelBindGroup);
     for (var i = 0; i < pushConstants.nOffsets; ++i) {
         pass.setBindGroup(1, blockIDOffsetBG, pushConstants.dynamicOffsets, i, 1);
         pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
@@ -927,7 +978,10 @@ VolumeRaycaster.prototype.renderSurface =
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
 
+        var start = performance.now();
         await this.computeInitialRays(viewParamUpload);
+        var end = performance.now();
+        console.log(`Compute initial rays took ${end - start} ms`);
 
         this.totalPassTime = 0;
         this.numPasses = 0;
@@ -1018,6 +1072,7 @@ VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
 
     initialRaysPass.end();
     this.device.queue.submit([commandEncoder.finish()]);
+    await this.device.queue.onSubmittedWorkDone();
 };
 
 // Step the active rays forward in the macrocell grid, updating block_id and t.
@@ -1034,10 +1089,12 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
 
     pass.setPipeline(this.macroTraversePipeline);
     pass.setBindGroup(0, this.macroTraverseBindGroup);
+    pass.setBindGroup(1, this.voxelBindGroup);
     pass.dispatch(this.canvas.width, this.canvas.height, 1);
 
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
+    await this.device.queue.onSubmittedWorkDone();
 };
 
 // Mark the active blocks for the current viewpoint/isovalue and count the # of rays
@@ -1077,6 +1134,7 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
     pass.end();
 
     this.device.queue.submit([commandEncoder.finish()]);
+    await this.device.queue.onSubmittedWorkDone();
 };
 
 // Scan the blockNumRaysBuffer storing the output in blockRayOffsetBuffer and
@@ -1268,6 +1326,7 @@ VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks
     pass.end();
 
     await this.device.queue.submit([commandEncoder.finish()]);
+    await this.device.queue.onSubmittedWorkDone();
 };
 
 VolumeRaycaster.prototype.decompressBlocks =

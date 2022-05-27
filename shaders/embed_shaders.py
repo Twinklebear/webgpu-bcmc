@@ -44,7 +44,8 @@ shaders = [
     "debug_view_rays_per_block.comp",
     "write_ray_and_block_id.comp",
     "combine_block_information.comp",
-    "raytrace_active_block.comp"
+    "raytrace_active_block.comp",
+    "compute_voxel_range.comp"
 ]
 
 try:

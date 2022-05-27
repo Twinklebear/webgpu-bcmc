@@ -1,0 +1,61 @@
+#version 450 core
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+#include "zfp_decompress.comp"
+#include "util.glsl"
+
+// Note: This could really be done by the file format or server ahead of time,
+// instead of having the client do a preprocess to compute these ranges
+layout(set = 0, binding = 2, std430) buffer BlockInformation
+{
+    BlockRange block_ranges[];
+};
+
+layout(set = 1, binding = 0, std140) uniform BlockIDOffset
+{
+    uint block_id_offset;
+};
+
+layout(set = 2, binding = 0, std430) buffer VoxelInformation
+{
+    vec2 voxel_ranges[];
+};
+
+void main(void)
+{
+    const uint block_index = gl_GlobalInvocationID.x + block_id_offset;
+    const uint total_blocks = padded_dims.x * padded_dims.y * padded_dims.z / 64;
+    const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+
+    if (block_index >= total_blocks) {
+        return;
+    }
+
+    uvec3 block_pos;
+    block_pos.x = block_index % n_blocks.x;
+    block_pos.y = (block_index / n_blocks.x) % n_blocks.y;
+    block_pos.z = block_index / (n_blocks.x * n_blocks.y);
+
+    // Value range for a block is it's range combined with that of its neighbors to
+    // the positive side 
+    vec2 cell_range = block_ranges[block_index].range;
+    for (int k = 0; k < 2; ++k) {
+        for (int j = 0; j < 2; ++j) {
+            for (int i = 0; i < 2; ++i) {
+                const uvec3 neighbor = uvec3(i, j, k); 
+                const uvec3 coords = block_pos + neighbor;
+                if (neighbor == uvec3(0) || any(lessThan(coords, uvec3(0)))
+                        || any(greaterThanEqual(coords, n_blocks)))
+                {
+                    continue;
+                }
+                // TODO: use fcn
+                const uint neighbor_id = coords.x + n_blocks.x * (coords.y + n_blocks.y * coords.z);
+                cell_range.x = min(block_ranges[neighbor_id].range.x, cell_range.x);
+                cell_range.y = max(block_ranges[neighbor_id].range.y, cell_range.y);
+            }
+        }
+    }
+    voxel_ranges[block_index] = cell_range;
+}
