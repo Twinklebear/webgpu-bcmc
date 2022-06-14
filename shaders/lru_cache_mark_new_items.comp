@@ -25,7 +25,7 @@ layout(set = 2, binding = 0, std140) uniform PushConstants
 
 void main(void)
 {
-    const uint idx = gl_GlobalInvocationID.x;
+    const uint idx = gl_GlobalInvocationID.x + global_idx_offset * 32;
     const int slot = cached_item_slot[idx];
     if (slot >= 0) {
         item_needs_caching[idx] = 0;

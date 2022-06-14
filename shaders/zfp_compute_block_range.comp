@@ -18,7 +18,7 @@ layout(set = 1, binding = 0, std140) uniform BlockIDOffset
 
 void main(void)
 {
-    const uint block_index = gl_GlobalInvocationID.x + block_id_offset;
+    const uint block_index = gl_GlobalInvocationID.x + block_id_offset * 32;
     const uint total_blocks = padded_dims.x * padded_dims.y * padded_dims.z / 64;
 
     if (block_index >= total_blocks) {
