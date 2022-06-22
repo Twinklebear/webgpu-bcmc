@@ -46,7 +46,7 @@ void main() {
     
     const uint pixel = uint(gl_FragCoord.x) + image_width * uint(gl_FragCoord.y);
 	if (t_hit.x < t_hit.y) {
-        rays[pixel].ray_dir = ray_dir;
+        rays[pixel].ray_dir = grid_ray_dir;
         rays[pixel].block_id = UINT_MAX;
         rays[pixel].t = t_hit.x;
     }
