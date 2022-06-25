@@ -45,7 +45,8 @@ shaders = [
     "write_ray_and_block_id.comp",
     "combine_block_information.comp",
     "raytrace_active_block.comp",
-    "compute_voxel_range.comp"
+    "compute_voxel_range.comp",
+    "compute_coarse_cell_range.comp"
 ]
 
 try:

@@ -1,0 +1,73 @@
+#version 450 core
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+#include "util.glsl"
+
+layout(set = 0, binding = 0, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+    uint max_bits;
+    float isovalue;
+    uint image_width;
+};
+
+layout(set = 0, binding = 1, std140) uniform BlockIDOffset
+{
+    uint block_id_offset;
+};
+
+// This is the brick value range + its neighbors from
+// the compute_voxel_range.comp step
+layout(set = 0, binding = 2, std430) buffer BrickInformation
+{
+    vec2 voxel_ranges[];
+};
+
+layout(set = 0, binding = 3, std430) buffer CoarseCellRange
+{
+    vec2 coarse_cell_ranges[];
+};
+
+
+void main(void)
+{
+    const uint coarse_cell_idx = gl_GlobalInvocationID.x + block_id_offset * 32;
+    const uint total_coarse_cells = padded_dims.x * padded_dims.y * padded_dims.z / (16 * 16 * 16);
+
+    if (coarse_cell_idx >= total_coarse_cells) {
+        return;
+    }
+
+    const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+    const uvec3 n_cells = uvec3(ceil(vec3(n_blocks) / vec3(4)));
+
+    uvec3 cell_pos;
+    cell_pos.x = coarse_cell_idx % n_cells.x;
+    cell_pos.y = (coarse_cell_idx / n_cells.x) % n_cells.y;
+    cell_pos.z = coarse_cell_idx / (n_cells.x * n_cells.y);
+
+    uvec3 block_pos = cell_pos * 4;
+    // Loop through the bricks within this cell and merge their range to compute the range
+    // for the coarse cell
+    uint block_idx = block_pos.x + n_blocks.x * (block_pos.y + n_blocks.y * block_pos.z);
+    vec2 coarse_cell_range = voxel_ranges[block_idx];
+    for (int k = 0; k < 2; ++k) {
+        for (int j = 0; j < 2; ++j) {
+            for (int i = 0; i < 2; ++i) {
+                const uvec3 offs = uvec3(i, j, k); 
+                const uvec3 coords = block_pos + offs;
+                if (any(greaterThanEqual(coords, n_blocks))) {
+                    continue;
+                }
+                uint cur_block_idx = coords.x + n_blocks.x * (coords.y + n_blocks.y * coords.z);
+                coarse_cell_range.x = min(voxel_ranges[cur_block_idx].x, coarse_cell_range.x);
+                coarse_cell_range.y = max(voxel_ranges[cur_block_idx].y, coarse_cell_range.y);
+            }
+        }
+    }
+    coarse_cell_ranges[coarse_cell_idx] = coarse_cell_range;
+}
+

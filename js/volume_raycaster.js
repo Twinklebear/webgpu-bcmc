@@ -93,6 +93,27 @@ var VolumeRaycaster = function(device, canvas) {
         }
     });
 
+    this.computeCoarseCellRangeBGLayout = device.createBindGroupLayout({
+        entries: [
+            {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
+            {
+                binding: 1,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {type: "uniform", hasDynamicOffset: true}
+            },
+            {binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+            {binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}}
+        ]
+    });
+    this.computeCoarseCellRangePipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout(
+            {bindGroupLayouts: [this.computeCoarseCellRangeBGLayout]}),
+        compute: {
+            module: device.createShaderModule({code: compute_coarse_cell_range_comp_spv}),
+            entryPoint: "main"
+        }
+    });
+
     this.decompressBlocksBGLayout = device.createBindGroupLayout({
         entries: [
             {
@@ -642,6 +663,14 @@ VolumeRaycaster.prototype.setCompressedVolume =
         [this.paddedDims[0] / 4, this.paddedDims[1] / 4, this.paddedDims[2] / 4];
     this.totalBlocks = (this.paddedDims[0] * this.paddedDims[1] * this.paddedDims[2]) / 64;
 
+    this.coarseGridDims = [
+        alignTo(this.blockGridDims[0], 4) / 4,
+        alignTo(this.blockGridDims[1], 4) / 4,
+        alignTo(this.blockGridDims[2], 4) / 4,
+    ];
+    this.totalCoarseCells =
+        (this.coarseGridDims[0] * this.coarseGridDims[1] * this.coarseGridDims[2]);
+
     console.log(`total blocks ${this.totalBlocks}`);
     const groupThreadCount = 32;
     this.numWorkGroups = Math.ceil(this.totalBlocks / groupThreadCount);
@@ -875,6 +904,10 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
         size: this.totalBlocks * 2 * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
+    this.coarseCellRangesBuffer = this.device.createBuffer({
+        size: this.totalCoarseCells * 2 * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
 
     var bindGroup = this.device.createBindGroup({
         layout: this.computeBlockRangeBGLayout,
@@ -941,8 +974,57 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
         pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
     }
 
+    // Enqueue pass to compute the coarse cell ranges
+    var totalWorkGroupsCoarseCell = Math.ceil(this.totalCoarseCells / groupThreadCount);
+    var coarsePushConstants = buildPushConstantsBuffer(this.device, totalWorkGroupsCoarseCell);
+    var coarseRangeBG = this.device.createBindGroup({
+        layout: this.computeCoarseCellRangeBGLayout,
+        entries: [
+            {
+                binding: 0,
+                resource: {
+                    buffer: this.volumeInfoBuffer,
+                }
+            },
+            {binding: 1, resource: {buffer: coarsePushConstants.gpuBuffer, size: 4}},
+            {binding: 2, resource: {buffer: this.voxelRangesBuffer}},
+            {binding: 3, resource: {buffer: this.coarseCellRangesBuffer}}
+        ]
+    });
+    pass.setPipeline(this.computeCoarseCellRangePipeline);
+    for (var i = 0; i < pushConstants.nOffsets; ++i) {
+        pass.setBindGroup(0, coarseRangeBG, coarsePushConstants.dynamicOffsets, i, 1);
+        pass.dispatch(coarsePushConstants.dispatchSizes[i], 1, 1);
+    }
+
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
+
+    await this.device.queue.onSubmittedWorkDone();
+
+    var readbackCoarseRanges = this.device.createBuffer({
+        size: this.totalCoarseCells * 2 * 4,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    var commandEncoder = this.device.createCommandEncoder();
+    commandEncoder.copyBufferToBuffer(this.coarseCellRangesBuffer,
+                                      0,
+                                      readbackCoarseRanges,
+                                      0,
+                                      this.totalCoarseCells * 2 * 4);
+    this.device.queue.submit([commandEncoder.finish()]);
+
+    await this.device.queue.onSubmittedWorkDone();
+
+    await readbackCoarseRanges.mapAsync(GPUMapMode.READ);
+    var ranges = new Float32Array(readbackCoarseRanges.getMappedRange());
+    console.log(`Total coarse cells = ${this.totalCoarseCells}`);
+    for (var i = 0; i < this.totalCoarseCells; ++i) {
+        console.log(`Coarse Cell ${i} range = [${ranges[i * 2]}, ${ranges[i * 2 + 1]}]`);
+    }
+
+    readbackCoarseRanges.unmap();
 };
 
 // Progressively compute the surface, returns true when rendering is complete
