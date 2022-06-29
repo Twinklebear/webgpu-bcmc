@@ -37,6 +37,11 @@ layout(set = 1, binding = 0, std430) buffer VoxelInformation
     vec2 voxel_ranges[];
 };
 
+layout(set = 1, binding = 1, std430) buffer CoarseCellRange
+{
+    vec2 coarse_cell_ranges[];
+};
+
 vec4 block_id_to_color(const uvec3 block_id) {
     const vec3 n_blocks = padded_dims.xyz / uvec3(4);
     return vec4(vec3(block_id) / n_blocks, 1.0);
@@ -50,7 +55,7 @@ void main() {
     }
 
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
-    const vec3 macrogrid_dims = vec3(n_blocks);
+    const ivec3 macrogrid_dims = ivec3(n_blocks);
 
     // Transform the ray into the dual grid space
     vec3 volume_translation = vec3(0) - volume_scale.xyz * 0.5;
@@ -64,55 +69,24 @@ void main() {
     vol_eye *= 0.25;
     grid_ray_dir *= 0.25;
 
-    float t_current = rays[ray_index].t;
-	vec3 p = (vol_eye + (t_current) * grid_ray_dir);
-    p = clamp(p, vec3(0), vec3(macrogrid_dims - 1));
-
-    const vec3 inv_grid_ray_dir = 1.0 / grid_ray_dir;
-    vec3 cell = floor(p);
-    const vec3 t_max_neg = (cell - vol_eye) * inv_grid_ray_dir;
-    const vec3 t_max_pos = (cell + vec3(1) - vol_eye) * inv_grid_ray_dir;
-    const bvec3 is_neg_dir = lessThan(grid_ray_dir, vec3(0));
-    // Pick between positive/negative t_max based on the ray sign
-    vec3 t_max = mix(t_max_pos, t_max_neg, is_neg_dir);
-    const ivec3 grid_step = ivec3(sign(grid_ray_dir));
-    // Note: each voxel is a 1^3 box on the grid
-    const vec3 t_delta = abs(inv_grid_ray_dir);
-
-    // Traverse the grid 
-    while (!outside_grid(cell, macrogrid_dims)) {
-        const ivec3 block_pos = ivec3(cell);
-
-        float t_next = min(t_max.x, min(t_max.y, t_max.z));
-        if (t_next < t_current) {
-            break;
-        }
-
+    GridIterator grid_iter = init_grid_iterator(vol_eye, grid_ray_dir, rays[ray_index].t, macrogrid_dims);
+    ivec3 cell_id;
+    vec2 cell_t_range;
+    while (grid_iterator_next_cell(grid_iter, cell_t_range, cell_id)) {
         // Value range for a block is it's range combined with that of its neighbors to
         // the positive side 
-        uint block_id = block_pos.x + n_blocks.x * (block_pos.y + n_blocks.y * block_pos.z);
-        vec2 cell_range = voxel_ranges[block_id];
+        uint block_id = cell_id.x + n_blocks.x * (cell_id.y + n_blocks.y * cell_id.z);
+        const vec2 cell_range = voxel_ranges[block_id];
 
         if (isovalue >= cell_range.x && isovalue <= cell_range.y) {
             rays[ray_index].block_id = block_id;
-            rays[ray_index].t = t_current;
-            rays[ray_index].t_next = t_next;
+            rays[ray_index].t = cell_t_range.x;
+            rays[ray_index].t_next = cell_t_range.y;
             return;
         }
 
-        t_current = t_next;
-        // Advance in the grid
-        if (t_current == t_max.x) {
-            cell.x += grid_step.x;
-            t_max.x += t_delta.x;
-        } else if (t_current == t_max.y) {
-            cell.y += grid_step.y;
-            t_max.y += t_delta.y;
-        } else {
-            cell.z += grid_step.z;
-            t_max.z += t_delta.z;
-        }
     }
+
     rays[ray_index].block_id = UINT_MAX;
     rays[ray_index].t = FLT_MAX;
     // Rays that exit the macrocell grid write the background color

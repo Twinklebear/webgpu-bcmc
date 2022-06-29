@@ -280,25 +280,6 @@ void main(void)
                 grid_ray_dir *= 0.25;
             }
 
-            float t_prev = rays[ray_index].t - 0.01;
-            vec3 p = (vol_eye + (t_prev) * grid_ray_dir);
-            if (block_info.lod == 1) {
-                p = clamp(p, vec3(0), vec3(1));
-            } else {
-                p = clamp(p, vec3(0), vec3(block_dims - 2));
-            }
-
-            const vec3 inv_grid_ray_dir = 1.0 / grid_ray_dir;
-            vec3 cell = floor(p);
-            const vec3 t_max_neg = (cell - vol_eye) * inv_grid_ray_dir;
-            const vec3 t_max_pos = (cell + vec3(1) - vol_eye) * inv_grid_ray_dir;
-            const bvec3 is_neg_dir = lessThan(grid_ray_dir, vec3(0));
-            // Pick between positive/negative t_max based on the ray sign
-            vec3 t_max = mix(t_max_pos, t_max_neg, is_neg_dir);
-            const ivec3 grid_step = ivec3(sign(grid_ray_dir));
-            // Note: each voxel is a 1^3 box on the grid
-            const vec3 t_delta = abs(inv_grid_ray_dir);
-
             // Traverse the ray through the dual grid 
             float vertex_values[8];
             bool hit_surface = false;
@@ -307,10 +288,14 @@ void main(void)
             float t_hit;
             vec2 cell_range = vec2(0);
 
+            const float t_prev = rays[ray_index].t - 0.01;
+            GridIterator grid_iter = init_grid_iterator(vol_eye, grid_ray_dir, t_prev, ivec3(block_dims) - 1);
+
+            // TODO: Remove the LOD stuff
             if (block_info.lod == 1) {
                 load_block_lod(block_info.id, vertex_values);
                 
-                const float t_next = min(t_max.x, min(t_max.y, t_max.z));
+                const float t_next = min(grid_iter.t_max.x, min(grid_iter.t_max.y, grid_iter.t_max.z));
                 float t_hit;
                 const vec3 cell_p = vol_eye + grid_ray_dir * (t_prev + (t_next - t_prev) * 0.5f);
                 hit_surface = marmitt_intersect(vol_eye,
@@ -319,36 +304,21 @@ void main(void)
                     hit_p = (vol_eye + grid_ray_dir * t_hit);
                 }
             } else {
-                while (!outside_dual_grid(cell, vec3(block_dims))) {
-                    v000 = ivec3(cell);
-
+                vec2 cell_t_range;
+                while (grid_iterator_next_cell(grid_iter, cell_t_range, v000)) {
                     // For when we are past the LOD_threshold and want full accuracy
                     compute_vertex_values(v000, block_dims, vertex_values, cell_range);
 
-                    const float t_next = min(t_max.x, min(t_max.y, t_max.z));
                     const bool skip_cell = isovalue < cell_range.x || isovalue > cell_range.y;
 
                     if (!skip_cell) {
                         hit_surface = marmitt_intersect(vol_eye,
-                                grid_ray_dir, v000, vertex_values, t_prev, t_next, t_hit);
+                                grid_ray_dir, v000, vertex_values, cell_t_range.x, cell_t_range.y, t_hit);
 
                         if (hit_surface) {
                             hit_p = vol_eye + grid_ray_dir * t_hit;
                             break;
                         }
-                    }
-
-                    t_prev = t_next;
-                    // Advance in the grid
-                    if (t_next == t_max.x) {
-                        cell.x += grid_step.x;
-                        t_max.x += t_delta.x;
-                    } else if (t_next == t_max.y) {
-                        cell.y += grid_step.y;
-                        t_max.y += t_delta.y;
-                    } else {
-                        cell.z += grid_step.z;
-                        t_max.z += t_delta.z;
                     }
                 }
             }

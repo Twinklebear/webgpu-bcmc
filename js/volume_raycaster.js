@@ -361,10 +361,28 @@ var VolumeRaycaster = function(device, canvas) {
             }
         ],
     });
+    this.macroTraverseRangesBGLayout = device.createBindGroupLayout({
+        entries: [
+            {
+                binding: 0,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
+            },
+            {
+                binding: 1,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
+            }
+        ]
+    });
 
     this.macroTraversePipeline = device.createComputePipeline({
         layout: device.createPipelineLayout({
-            bindGroupLayouts: [this.macroTraverseBGLayout, this.computeVoxelRangeBGLayout],
+            bindGroupLayouts: [this.macroTraverseBGLayout, this.macroTraverseRangesBGLayout],
         }),
         compute: {
             module: device.createShaderModule({
@@ -916,24 +934,34 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
                 binding: 0,
                 resource: {
                     buffer: this.compressedBuffer,
-                },
+                }
             },
             {
                 binding: 1,
                 resource: {
                     buffer: this.volumeInfoBuffer,
-                },
+                }
             },
             {
                 binding: 2,
                 resource: {
                     buffer: this.blockRangesBuffer,
-                },
-            },
-        ],
+                }
+            }
+        ]
     });
     this.voxelBindGroup = this.device.createBindGroup({
         layout: this.computeVoxelRangeBGLayout,
+        entries: [{
+            binding: 0,
+            resource: {
+                buffer: this.voxelRangesBuffer,
+            }
+        }]
+    });
+
+    this.macroTraverseRangesBG = this.device.createBindGroup({
+        layout: this.macroTraverseRangesBGLayout,
         entries: [
             {
                 binding: 0,
@@ -941,7 +969,14 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
                     buffer: this.voxelRangesBuffer,
                 },
             },
+            {
+                binding: 1,
+                resource: {
+                    buffer: this.coarseCellRangesBuffer,
+                }
+            }
         ]
+
     });
 
     const groupThreadCount = 32;
@@ -999,32 +1034,6 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
 
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
-
-    await this.device.queue.onSubmittedWorkDone();
-
-    var readbackCoarseRanges = this.device.createBuffer({
-        size: this.totalCoarseCells * 2 * 4,
-        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-    });
-
-    var commandEncoder = this.device.createCommandEncoder();
-    commandEncoder.copyBufferToBuffer(this.coarseCellRangesBuffer,
-                                      0,
-                                      readbackCoarseRanges,
-                                      0,
-                                      this.totalCoarseCells * 2 * 4);
-    this.device.queue.submit([commandEncoder.finish()]);
-
-    await this.device.queue.onSubmittedWorkDone();
-
-    await readbackCoarseRanges.mapAsync(GPUMapMode.READ);
-    var ranges = new Float32Array(readbackCoarseRanges.getMappedRange());
-    console.log(`Total coarse cells = ${this.totalCoarseCells}`);
-    for (var i = 0; i < this.totalCoarseCells; ++i) {
-        console.log(`Coarse Cell ${i} range = [${ranges[i * 2]}, ${ranges[i * 2 + 1]}]`);
-    }
-
-    readbackCoarseRanges.unmap();
 };
 
 // Progressively compute the surface, returns true when rendering is complete
@@ -1168,7 +1177,7 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
 
     pass.setPipeline(this.macroTraversePipeline);
     pass.setBindGroup(0, this.macroTraverseBindGroup);
-    pass.setBindGroup(1, this.voxelBindGroup);
+    pass.setBindGroup(1, this.macroTraverseRangesBG);
     pass.dispatch(this.canvas.width, this.canvas.height, 1);
 
     pass.end();
