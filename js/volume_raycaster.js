@@ -1027,7 +1027,7 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
         ]
     });
     pass.setPipeline(this.computeCoarseCellRangePipeline);
-    for (var i = 0; i < pushConstants.nOffsets; ++i) {
+    for (var i = 0; i < coarsePushConstants.nOffsets; ++i) {
         pass.setBindGroup(0, coarseRangeBG, coarsePushConstants.dynamicOffsets, i, 1);
         pass.dispatch(coarsePushConstants.dispatchSizes[i], 1, 1);
     }
