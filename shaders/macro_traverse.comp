@@ -57,34 +57,62 @@ void main() {
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
     const ivec3 macrogrid_dims = ivec3(n_blocks);
 
+    // Coarse grid is 1/4 the size of the macrocell grid
+    const ivec3 coarse_grid_dims = ivec3(ceil(vec3(macrogrid_dims) / vec3(4)));
+
     // Transform the ray into the dual grid space
     vec3 volume_translation = vec3(0) - volume_scale.xyz * 0.5;
 	vec3 transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale.xyz;
-	vec3 vol_eye = transformed_eye * volume_dims.xyz - vec3(0.5);
-    vec3 grid_ray_dir = rays[ray_index].ray_dir;
+	const vec3 ray_org = transformed_eye * volume_dims.xyz - vec3(0.5);
 
-    // Transform to the macrocell grid
+    // Compute ray origin and dir on the macrocell grid
     // Note: ray dir is NOT normalized here, because the t values are relative
     // to the full volume grid.
-    vol_eye *= 0.25;
-    grid_ray_dir *= 0.25;
+    const vec3 macrocell_grid_org = ray_org * 0.25;
+    const vec3 macrocell_grid_ray_dir = rays[ray_index].ray_dir * 0.25;
 
-    GridIterator grid_iter = init_grid_iterator(vol_eye, grid_ray_dir, rays[ray_index].t, macrogrid_dims);
-    ivec3 cell_id;
-    vec2 cell_t_range;
-    while (grid_iterator_next_cell(grid_iter, cell_t_range, cell_id)) {
-        // Value range for a block is it's range combined with that of its neighbors to
-        // the positive side 
-        uint block_id = cell_id.x + n_blocks.x * (cell_id.y + n_blocks.y * cell_id.z);
-        const vec2 cell_range = voxel_ranges[block_id];
+    // Compute ray origin and dir on the coarse cell grid
+    const vec3 coarse_grid_org = macrocell_grid_org * 0.25;
+    const vec3 coarse_grid_ray_dir = macrocell_grid_ray_dir * 0.25;
 
-        if (isovalue >= cell_range.x && isovalue <= cell_range.y) {
-            rays[ray_index].block_id = block_id;
-            rays[ray_index].t = cell_t_range.x;
-            rays[ray_index].t_next = cell_t_range.y;
-            return;
+    // Traverse the coarse grid
+    GridIterator coarse_grid_iter = init_grid_iterator(coarse_grid_org,
+            coarse_grid_ray_dir, rays[ray_index].t, coarse_grid_dims);
+    ivec3 coarse_cell_id;
+    vec2 coarse_cell_t_range;
+    while (grid_iterator_next_cell(coarse_grid_iter, coarse_cell_t_range, coarse_cell_id)) {
+        const uint coarse_cell_index = coarse_cell_id.x
+            + coarse_grid_dims.x * (coarse_cell_id.y + coarse_grid_dims.y * coarse_cell_id.z);
+        vec2 coarse_cell_range = coarse_cell_ranges[coarse_cell_index];
+        // Skip all bricks in this coarse cell if we know they won't contain the isovalue
+        if (isovalue < coarse_cell_range.x || isovalue > coarse_cell_range.y) {
+            continue;
         }
 
+        const ivec3 coarse_grid_cell_org = coarse_cell_id * 4;
+        const ivec3 macrocell_grid_dims =
+            ivec3(min(coarse_grid_cell_org + vec3(4), macrogrid_dims) - coarse_grid_cell_org);
+        // Traverse the macrocell grid within this coarse grid
+        // We also translate the coarse grid cell to be at the origin for the grid iterator
+        GridIterator grid_iter = init_grid_iterator(macrocell_grid_org - coarse_grid_cell_org,
+                macrocell_grid_ray_dir, coarse_cell_t_range.x, macrocell_grid_dims);
+        ivec3 cell_id;
+        vec2 cell_t_range;
+        while (grid_iterator_next_cell(grid_iter, cell_t_range, cell_id)) {
+            // Value range for a block is it's range combined with that of its neighbors to
+            // the positive side 
+            const uint block_index = coarse_grid_cell_org.x + cell_id.x
+                + n_blocks.x * (coarse_grid_cell_org.y + cell_id.y
+                        + n_blocks.y * (coarse_grid_cell_org.z + cell_id.z));
+            const vec2 cell_range = voxel_ranges[block_index];
+
+            if (isovalue >= cell_range.x && isovalue <= cell_range.y) {
+                rays[ray_index].block_id = block_index;
+                rays[ray_index].t = cell_t_range.x;
+                rays[ray_index].t_next = cell_t_range.y;
+                return;
+            }
+        }
     }
 
     rays[ray_index].block_id = UINT_MAX;
