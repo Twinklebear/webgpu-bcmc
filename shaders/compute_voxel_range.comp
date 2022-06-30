@@ -37,7 +37,7 @@ void main(void)
     block_pos.y = (block_index / n_blocks.x) % n_blocks.y;
     block_pos.z = block_index / (n_blocks.x * n_blocks.y);
 
-    // Value range for a block is it's range combined with that of its neighbors to
+    // Value range for a block is its range combined with that of its neighbors to
     // the positive side 
     vec2 cell_range = block_ranges[block_index].range;
     for (int k = 0; k < 2; ++k) {
