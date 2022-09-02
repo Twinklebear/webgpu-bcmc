@@ -42,10 +42,9 @@ vec4 compute_polynomial(const vec3 p, const vec3 dir, const vec3 v000, in float 
     const vec3 v111 = v000 + vec3(1);
     // Note: Grid voxels sizes are 1^3
     const vec3 a[2] = {v111 - p, p - v000};
-    const vec3 b[2] = {dir, -dir};
+    const vec3 b[2] = {-dir, dir};
 
     vec4 poly = vec4(0);
-    poly.w -= isovalue;
     for (int k = 0; k < 2; ++k) {
         for (int j = 0; j < 2; ++j) {
             for (int i = 0; i < 2; ++i) {
@@ -142,19 +141,25 @@ bool marmitt_intersect(const in vec3 vol_eye,
                        const float t_next,
                        out float t_hit)
 {
+    if (t_next <= t_prev) {
+        return false;
+    }
     // The text seems to not say explicitly, but I think it is required to have
     // the ray "origin" within the cell for the cell-local coordinates for a to
     // be computed properly. So here I set the cell_p to be at the midpoint of the
     // ray's overlap with the cell, which makes it easy to compute t_in/t_out and
     // avoid numerical issues with cell_p being right at the edge of the cell.
     const vec3 cell_p = vol_eye + grid_ray_dir * (t_prev + (t_next - t_prev) * 0.5f);
-    float t_in = -(t_next - t_prev) * 0.5f;
-    float t_out = (t_next - t_prev) * 0.5f;
-    const vec4 poly = compute_polynomial(cell_p, grid_ray_dir, v000, vertex_values);
+    float t_in = -(t_next - t_prev) * 0.5f * length(grid_ray_dir);
+    float t_out = (t_next - t_prev) * 0.5f * length(grid_ray_dir);
+
+    const vec3 cell_ray_dir = normalize(grid_ray_dir);
+    vec4 poly = compute_polynomial(cell_p, cell_ray_dir, v000, vertex_values);
+    poly.w -= isovalue;
 
     float f_in = evaluate_polynomial(poly, t_in);
     float f_out = evaluate_polynomial(poly, t_out);
-    float roots[2] = {0, 0};
+    float roots[2] = {0.0, 0.0};
     // TODO: Seeming to get some holes in the surface with the Marmitt intersector
     if (solve_quadratic(vec3(3.f * poly.x, 2.f * poly.y, poly.z), roots)) {
         if (roots[0] >= t_in && roots[0] <= t_out) {
@@ -181,7 +186,7 @@ bool marmitt_intersect(const in vec3 vol_eye,
     // If the signs aren't equal we know there's an intersection in the cell
     if (sign(f_in) != sign(f_out)) {
         // Find the intersection via repeated linear interpolation
-        for (int i = 0; i < 10; ++i) {
+        for (int i = 0; i < 3; ++i) {
             float t = t_in + (t_out - t_in) * (-f_in) / (f_out - f_in);
             float f_t = evaluate_polynomial(poly, t);
             if (sign(f_t) == sign(f_in)) {
@@ -192,9 +197,9 @@ bool marmitt_intersect(const in vec3 vol_eye,
                 f_out = f_t;
             }
         }
-        t_hit = t_in + (t_out - t_in) * (-f_in) / (f_out - f_in);
+        const float cell_t_hit = t_in + (t_out - t_in) * (-f_in) / (f_out - f_in);
         // Return t_hit relative to vol_eye
-        vec3 hit_p = cell_p + grid_ray_dir * t_hit;
+        vec3 hit_p = cell_p + cell_ray_dir * cell_t_hit;
         t_hit = length(hit_p - vol_eye) / length(grid_ray_dir);
         return true;
     }
