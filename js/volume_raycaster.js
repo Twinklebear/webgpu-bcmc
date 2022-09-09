@@ -4,6 +4,8 @@ var VolumeRaycaster = function(device, canvas) {
     this.streamCompact = new StreamCompact(device);
     this.numActiveBlocks = 0;
     this.renderComplete = false;
+    this.initialRayTimes = [];
+    this.initialRayTimeSum = 0;
 
     this.canvas = canvas;
     console.log(`canvas size ${canvas.width}x${canvas.height}`);
@@ -1039,12 +1041,23 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
 // Progressively compute the surface, returns true when rendering is complete
 VolumeRaycaster.prototype.renderSurface =
     async function(isovalue, LODThreshold, viewParamUpload, perfTracker, renderParamsChanged) {
+    isovalue = 200;
     if (this.renderComplete && !renderParamsChanged) {
         return this.renderComplete;
     }
     console.log("===== Rendering Surface =======");
 
     if (renderParamsChanged) {
+        this.compactTimes = [];
+        this.compactTimeSum = 0;
+        this.markTimes = [];
+        this.markTimeSum = 0;
+        this.macroTimes = [];
+        this.macroTimeSum = 0;
+        this.raytraceTimes = [];
+        this.raytraceTimeSum = 0;
+        this.decompressTimes = [];
+        this.decompressTimeSum = 0;
         console.log(`Render params changed, LOD: ${LODThreshold}`);
         // Upload the isovalue
         await this.uploadIsovalueBuf.mapAsync(GPUMapMode.WRITE);
@@ -1062,7 +1075,7 @@ VolumeRaycaster.prototype.renderSurface =
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.resetBlockActivePipeline);
         pass.setBindGroup(0, this.resetBlockActiveBG);
-        pass.dispatch(this.blockGridDims[0], this.blockGridDims[1], this.blockGridDims[2]);
+        pass.dispatch(Math.ceil(this.blockGridDims[0] / 8), this.blockGridDims[1], this.blockGridDims[2]);
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
 
@@ -1070,6 +1083,8 @@ VolumeRaycaster.prototype.renderSurface =
         await this.computeInitialRays(viewParamUpload);
         var end = performance.now();
         console.log(`Compute initial rays took ${end - start} ms`);
+        this.initialRayTimes.push(end - start);
+        this.initialRayTimeSum += (end - start);
 
         this.totalPassTime = 0;
         this.numPasses = 0;
@@ -1082,11 +1097,15 @@ VolumeRaycaster.prototype.renderSurface =
     await this.macroTraverse();
     var end = performance.now();
     console.log(`Macro Traverse: ${end - start}ms`);
+    this.macroTimes.push(end - start);
+    this.macroTimeSum += (end - start);
 
     start = performance.now();
     await this.markActiveBlocks();
     end = performance.now();
     console.log(`Mark Active Blocks: ${end - start}ms`);
+    this.markTimes.push(end - start);
+    this.markTimeSum += (end - start);
 
     // Decompress any new blocks needed for the pass
     start = performance.now();
@@ -1100,6 +1119,8 @@ VolumeRaycaster.prototype.renderSurface =
         await this.decompressBlocks(nBlocksToDecompress, decompressBlockIDs);
         end = performance.now();
         console.log(`Decompress: ${end - start}ms`);
+        this.decompressTimes.push(end - start);
+        this.decompressTimeSum += (end - start);
     }
 
     start = performance.now();
@@ -1117,6 +1138,8 @@ VolumeRaycaster.prototype.renderSurface =
         await this.raytraceVisibleBlocks(numActiveBlocks);
         end = performance.now();
         console.log(`Raytrace blocks: ${end - start}ms`);
+        this.raytraceTimes.push(end - start);
+        this.raytraceTimeSum += (end - start);
         console.log(`PASS TOOK: ${end - startPass}ms`);
         console.log(`++++++++++`);
 
@@ -1129,6 +1152,18 @@ VolumeRaycaster.prototype.renderSurface =
     this.renderComplete = numRaysActive == 0;
     if (this.renderComplete) {
         console.log(`Avg time per pass ${this.totalPassTime / this.numPasses}ms`);
+        // console.log(`Avg compact time per pass ${this.compactTimeSum / this.compactTimes.length})`);
+        // console.log(this.compactTimes);
+        // console.log(`Avg mark active block time per pass ${this.markTimeSum / this.markTimes.length})`);
+        // console.log(this.markTimes);
+        // console.log(`Avg macro traverse time per pass ${this.macroTimeSum / this.macroTimes.length})`);
+        // console.log(this.macroTimes);
+        // console.log(`Avg compute initial rays time ${this.initialRayTimeSum / this.initialRayTimes.length})`);
+        // console.log(this.initialRayTimes);
+        // console.log(`Avg raytrace time per pass ${this.raytraceTimeSum / this.raytraceTimes.length})`);
+        // console.log(this.raytraceTimes);
+        // console.log(`Avg decompress time ${this.decompressTimeSum / this.decompressTimes.length})`);
+        // console.log(this.decompressTimes);
     }
     return this.renderComplete;
 };
@@ -1148,7 +1183,7 @@ VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
     var resetRaysPass = commandEncoder.beginComputePass(this.resetRaysPipeline);
     resetRaysPass.setBindGroup(0, this.resetRaysBG);
     resetRaysPass.setPipeline(this.resetRaysPipeline);
-    resetRaysPass.dispatch(this.canvas.width, this.canvas.height, 1);
+    resetRaysPass.dispatch(Math.ceil(this.canvas.width / 8), this.canvas.height, 1);
     resetRaysPass.end();
 
     var initialRaysPass = commandEncoder.beginRenderPass(this.initialRaysPassDesc);
@@ -1178,7 +1213,7 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     pass.setPipeline(this.macroTraversePipeline);
     pass.setBindGroup(0, this.macroTraverseBindGroup);
     pass.setBindGroup(1, this.macroTraverseRangesBG);
-    pass.dispatch(this.canvas.width, this.canvas.height, 1);
+    pass.dispatch(Math.ceil(this.canvas.width / 64), this.canvas.height, 1);
 
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
@@ -1194,13 +1229,13 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
     // Reset the # of rays for each block
     pass.setPipeline(this.resetBlockNumRaysPipeline);
     pass.setBindGroup(0, this.resetBlockNumRaysBG);
-    pass.dispatch(this.blockGridDims[0], this.blockGridDims[1], this.blockGridDims[2]);
+    pass.dispatch(Math.ceil(this.blockGridDims[0] / 8), this.blockGridDims[1], this.blockGridDims[2]);
 
     // Compute which blocks are active and how many rays each has
     pass.setPipeline(this.markBlockActivePipeline);
     pass.setBindGroup(0, this.markBlockActiveBG);
     pass.setBindGroup(1, this.renderTargetDebugBG);
-    pass.dispatch(this.canvas.width, this.canvas.height, 1);
+    pass.dispatch(Math.ceil(this.canvas.width / 8), this.canvas.height, 1);
 
     pass.end();
 
@@ -1269,7 +1304,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     var pass = commandEncoder.beginComputePass()
     pass.setPipeline(this.writeRayAndBlockIDPipeline);
     pass.setBindGroup(0, this.writeRayAndBlockIDBG);
-    pass.dispatch(this.canvas.width, this.canvas.height, 1);
+    pass.dispatch(Math.ceil(this.canvas.width / 8), this.canvas.height, 1);
     pass.end();
 
     // We scan the rayActiveCompactOffsetBuffer, so copy the ray active information over
@@ -1318,6 +1353,8 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
                                               this.activeBlockIDBuffer);
     var endCompacts = performance.now();
     console.log(`sortActiveRaysByBlock: Compacts ${endCompacts - startCompacts}ms`);
+    this.compactTimes.push(endCompacts - startCompacts);
+    this.compactTimeSum += (endCompacts - startCompacts);
 
     var start = performance.now();
     // Sort active ray IDs by their block ID
@@ -1424,7 +1461,7 @@ VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks
     // the change lands in Chromium
     pass.setPipeline(this.combineBlockInformationPipeline);
     pass.setBindGroup(0, this.combineBlockInformationBG);
-    pass.dispatch(numActiveBlocks, 1, 1);
+    pass.dispatch(Math.ceil(numActiveBlocks), 1, 1);
 
     // TODO: Might be worth for data sets where many blocks
     // project to a lot of pixels to split up the dispatches,
@@ -1500,7 +1537,7 @@ VolumeRaycaster.prototype.decompressBlocks =
         var commandEncoder = this.device.createCommandEncoder();
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.decompressBlocksPipeline);
-        pass.setBindGroup(0, decompressBlocksBG);
+        pass.setBindGroup(0, decompressBlocksBG); 
         // Have to create bind group here because dynamic offsets are not allowed
         var decompressBlocksStartOffsetBG = this.device.createBindGroup({
             layout: this.ub1binding0BGLayout,
@@ -1516,7 +1553,7 @@ VolumeRaycaster.prototype.decompressBlocks =
             ],
         });
         pass.setBindGroup(1, decompressBlocksStartOffsetBG);
-        pass.dispatch(numWorkGroups, 1, 1);
+        pass.dispatch(Math.ceil(numWorkGroups), 1, 1);
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
     }

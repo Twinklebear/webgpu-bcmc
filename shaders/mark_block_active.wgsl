@@ -23,7 +23,7 @@ struct RayInfo {
 };
 
 /*
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 8, local_size_y = 1, local_size_z = 1) in;
 */
 /*
 layout(set = 0, binding = 0, std140) uniform VolumeParams
@@ -125,7 +125,7 @@ fn compute_block_id(block_pos: uint3) -> u32
     return block_pos.x + n_blocks.x * (block_pos.y + n_blocks.y * block_pos.z);
 }
 
-@stage(compute) @workgroup_size(1, 1, 1)
+@stage(compute) @workgroup_size(8, 1, 1)
 fn main(@builtin(global_invocation_id) g_invocation_id : vec3<u32>) {
     /*
     uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
@@ -234,4 +234,3 @@ fn main(@builtin(global_invocation_id) g_invocation_id : vec3<u32>) {
         }
     }
 }
-

@@ -175,7 +175,7 @@ StreamCompact.prototype.compactActiveIDs =
             });
         }
         pass.setBindGroup(0, streamCompactBG);
-        pass.dispatch(numWorkGroups, 1, 1);
+        pass.dispatch(Math.ceil(numWorkGroups / 8), 1, 1);
     }
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
@@ -246,7 +246,7 @@ StreamCompact.prototype.compactActive =
         });
         pass.setBindGroup(0, streamCompactBG);
         pass.setBindGroup(1, dataBG);
-        pass.dispatch(numWorkGroups, 1, 1);
+        pass.dispatch(Math.ceil(numWorkGroups / 8), 1, 1);
     }
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);

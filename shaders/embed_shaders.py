@@ -88,9 +88,9 @@ manual_wgsl_shaders = [
 # shaders that use BLOCK_SIZE or SORT_CHUNK_SIZE but I don't think it'll be needed
 for shader in manual_wgsl_shaders:
     with open(shader, "r") as f:
-        print("Embedding manually WGSL'd shader {} as {}".format(shader, var_name))
         fname, ext = os.path.splitext(os.path.basename(shader))
         var_name = "{}_{}_spv".format(fname, ext[1:])
+        print("Embedding manually WGSL'd shader {} as {}".format(shader, var_name))
         compiled_shaders += "const " + var_name + " = `" + "".join(f.readlines()) + "`;\n";
 
 with open(output, "w") as f:
