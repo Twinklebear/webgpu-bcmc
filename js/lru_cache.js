@@ -365,25 +365,26 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     var pass = commandEncoder.beginComputePass();
 
     /*
-    console.log(`cacheSize = ${this.cacheSize}, totalElements = ${
+    console.log(`LRU: cacheSize = ${this.cacheSize}, totalElements = ${
         this.totalElements}, aligned total = ${this.alignedTotalElements}`);
         */
 
     // Age all slots in the cache
     pass.setPipeline(this.ageCacheSlotsPipeline);
     pass.setBindGroup(0, this.lruCacheBG);
-    // TODO: Probably should be chunked to handle very large volumes again
     pass.dispatch(this.cacheSize / 32, 1, 1);
-    
+
     // For testing purposes
-    // pass.end();
-    // this.device.queue.submit([commandEncoder.finish()]);
-    // var start = performance.now();
-    // await this.device.queue.onSubmittedWorkDone();
-    // var end = performance.now();
-    // console.log(`Age cache slots took ${end - start}ms`);
-    // var commandEncoder = this.device.createCommandEncoder();
-    // var pass = commandEncoder.beginComputePass();
+    /*
+    pass.end();
+    var start = performance.now();
+    this.device.queue.submit([commandEncoder.finish()]);
+    await this.device.queue.onSubmittedWorkDone();
+    var end = performance.now();
+    console.log(`LRU: Age cache slots took ${end - start}ms`);
+    var commandEncoder = this.device.createCommandEncoder();
+    var pass = commandEncoder.beginComputePass();
+    */
 
     {
         var totalWorkGroups = this.alignedTotalElements / 32;
@@ -408,16 +409,17 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         }
     }
     // For testing purposes
-    // pass.end();
-    // this.device.queue.submit([commandEncoder.finish()]);
-    // var start = performance.now();
-    // await this.device.queue.onSubmittedWorkDone();
-    // var end = performance.now();
-    // console.log(`Mark new items took ${end - start}ms`);
-    // var commandEncoder = this.device.createCommandEncoder();
-    // var pass = commandEncoder.beginComputePass();
-    // pass.setBindGroup(0, this.lruCacheBG);
-
+    /*
+    pass.end();
+    this.device.queue.submit([commandEncoder.finish()]);
+    var start = performance.now();
+    await this.device.queue.onSubmittedWorkDone();
+    var end = performance.now();
+    console.log(`LRU: Mark new items took ${end - start}ms`);
+    var commandEncoder = this.device.createCommandEncoder();
+    var pass = commandEncoder.beginComputePass();
+    pass.setBindGroup(0, this.lruCacheBG);
+    */
 
     // We need a kernel to copy the slotAvailable member out of the structs instead of using
     // copyBufferToBuffer, since it's stored AoS to reduce our buffer use
@@ -433,8 +435,8 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     // var start = performance.now()
     await this.device.queue.onSubmittedWorkDone();
     var end = performance.now();
-    console.log(`Initial aging and mark new items took ${end - start}ms`);
-    // console.log(`Extract slots available took ${end - start}ms`);
+    // console.log(`LRU: Initial aging and mark new items took ${end - start}ms`);
+    console.log(`LRU: Extract slots available took ${end - start}ms`);
     perfTracker.lruMarkNewItems.push(end - start);
 
     uploadBuf.destroy();
@@ -451,7 +453,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     var start = performance.now();
     var numNewItems = await this.scanNeededSlots.scan(this.totalElements);
     var end = performance.now();
-    // console.log(`Scan needed slots took ${end - start}ms`);
+    console.log(`LRU: Scan needed slots took ${end - start}ms`);
     perfTracker.lruScanNeededSlots.push(end - start);
     perfTracker.lruNumNewItems.push(numNewItems);
 
@@ -468,7 +470,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         perfTracker.lruWriteNewItems.push(0);
         return [0, undefined];
     }
-    // console.log(`num new items ${numNewItems}`);
+    console.log(`LRU: num new items ${numNewItems}`);
 
     // Compact the IDs of the elements we need into a list of new elements we'll add
     var newItemIDs = this.device.createBuffer({
@@ -480,7 +482,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     await this.streamCompact.compactActiveIDs(
         this.totalElements, this.needsCaching, this.needsCachingOffsets, newItemIDs);
     var end = performance.now();
-    // console.log(`Compact new item ids took ${end - start}ms`);
+    console.log(`Compact new item ids took ${end - start}ms`);
     perfTracker.lruCompactNewItems.push(end - start);
 
     // Scan the slotAvailable buffer to get a count of the slots we currently
@@ -489,7 +491,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     var start = performance.now();
     var numSlotsAvailable = await this.slotAvailableScanner.scan(this.cacheSize);
     var end = performance.now();
-    console.log(`Scan slots available took ${end - start}ms`);
+    console.log(`LRU: Scan slots available took ${end - start}ms`);
     perfTracker.lruScanSlotsAvailable.push(end - start);
     perfTracker.lruNumSlotsAvailable.push(numSlotsAvailable);
 
@@ -630,7 +632,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         var start = performance.now();
         numSlotsAvailable = await this.slotAvailableScanner.scan(newSize);
         var end = performance.now();
-        console.log(`Scan new cache took ${end - start}ms`);
+        console.log(`LRU: Scan new cache took ${end - start}ms`);
 
         perfTracker.lruGrowCache.push(end - startGrow);
         this.cacheSize = newSize;
@@ -665,7 +667,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
                                               this.slotAvailableOffsets,
                                               this.slotAvailableIDs);
     var end = performance.now();
-    console.log(`Compact available slot IDs took ${end - start}ms`);
+    console.log(`LRU: Compact available slot IDs took ${end - start}ms`);
     perfTracker.lruCompactAvailableSlots.push(end - start);
 
     var start = performance.now();
@@ -711,6 +713,13 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         ],
     });
 
+    // Note: Bit of trick/hack, we only sort the number of entries we need since the
+    // sort implementation needs improvement. This helps the LRU cache update cost
+    // scale with the number of new items instead of the cache size, at the cost of making
+    // it not quite guaranteed that the oldest items are always evicted first.
+    var numItemsToSort = numNewItems;
+    // var numItemsToSort = numSlotsAvailable;
+    console.log(`LRU: numNewItems = ${numNewItems}, numSlotsAvailable = ${numSlotsAvailable}`);
     var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(
         this.slotAvailableIDs, 0, sortedIDs, 0, numSlotsAvailable * 4);
@@ -725,13 +734,13 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
     var end = performance.now();
-    // console.log(`Prep key/value pairs for sort: ${end - start}ms`);
+    console.log(`LRU: Prep key/value pairs for sort: ${end - start}ms`);
     perfTracker.lruPrepKeyValue.push(end - start);
 
     var start = performance.now();
-    await this.sorter.sort(slotKeys, sortedIDs, numSlotsAvailable, true);
+    await this.sorter.sort(slotKeys, sortedIDs, numItemsToSort, true);
     var end = performance.now();
-    // console.log(`Sorting ${numSlotsAvailable} ages/slots took ${end - start}ms`);
+    console.log(`LRU: Sorting ${numItemsToSort} ages/slots took ${end - start}ms`);
     perfTracker.lruTotalSortTime.push(end - start);
 
     // Update the bindgroup
@@ -805,7 +814,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
     var end = performance.now();
-    // console.log(`Writing new item slots took ${end - start}ms`);
+    console.log(`LRU: Writing new item slots took ${end - start}ms`);
     perfTracker.lruWriteNewItems.push(end - start);
 
     slotKeys.destroy();
