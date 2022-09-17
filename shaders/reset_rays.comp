@@ -20,6 +20,9 @@ layout(set = 0, binding = 1, std140) uniform VolumeParams
 };
 
 void main() {
+    if (gl_GlobalInvocationID.x >= image_width) {
+        return;
+    }
     uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
     rays[ray_index].ray_dir = vec3(0);
     rays[ray_index].block_id = UINT_MAX;

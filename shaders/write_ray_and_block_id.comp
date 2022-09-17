@@ -30,6 +30,9 @@ layout(set = 0, binding = 3, std430) buffer RayActive
 };
 
 void main() {
+    if (gl_GlobalInvocationID.x >= image_width) {
+        return;
+    }
     // Write out the ray index and its block id so that we can sort
     // the ray IDs using the block ID as the key. Also save out which rays
     // are active so we can do a compaction on the active ray IDs so that

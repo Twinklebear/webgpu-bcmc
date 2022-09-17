@@ -50,6 +50,10 @@ vec4 block_id_to_color(const uvec3 block_id) {
 }
 
 void main() {
+    if (gl_GlobalInvocationID.x >= image_width) {
+        return;
+    }
+
     uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
 
     if (rays[ray_index].t == FLT_MAX) {

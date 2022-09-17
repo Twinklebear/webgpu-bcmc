@@ -1041,7 +1041,6 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
 // Progressively compute the surface, returns true when rendering is complete
 VolumeRaycaster.prototype.renderSurface =
     async function(isovalue, LODThreshold, viewParamUpload, perfTracker, renderParamsChanged) {
-    isovalue = 200;
     if (this.renderComplete && !renderParamsChanged) {
         return this.renderComplete;
     }
@@ -1075,7 +1074,9 @@ VolumeRaycaster.prototype.renderSurface =
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.resetBlockActivePipeline);
         pass.setBindGroup(0, this.resetBlockActiveBG);
-        pass.dispatch(Math.ceil(this.blockGridDims[0] / 8), this.blockGridDims[1], this.blockGridDims[2]);
+        pass.dispatch(Math.ceil(this.blockGridDims[0] / 8),
+                      this.blockGridDims[1],
+                      this.blockGridDims[2]);
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
 
@@ -1152,17 +1153,17 @@ VolumeRaycaster.prototype.renderSurface =
     this.renderComplete = numRaysActive == 0;
     if (this.renderComplete) {
         console.log(`Avg time per pass ${this.totalPassTime / this.numPasses}ms`);
-        // console.log(`Avg compact time per pass ${this.compactTimeSum / this.compactTimes.length})`);
-        // console.log(this.compactTimes);
-        // console.log(`Avg mark active block time per pass ${this.markTimeSum / this.markTimes.length})`);
+        // console.log(`Avg compact time per pass ${this.compactTimeSum /
+        // this.compactTimes.length})`); console.log(this.compactTimes); console.log(`Avg mark
+        // active block time per pass ${this.markTimeSum / this.markTimes.length})`);
         // console.log(this.markTimes);
-        // console.log(`Avg macro traverse time per pass ${this.macroTimeSum / this.macroTimes.length})`);
-        // console.log(this.macroTimes);
-        // console.log(`Avg compute initial rays time ${this.initialRayTimeSum / this.initialRayTimes.length})`);
+        // console.log(`Avg macro traverse time per pass ${this.macroTimeSum /
+        // this.macroTimes.length})`); console.log(this.macroTimes); console.log(`Avg compute
+        // initial rays time ${this.initialRayTimeSum / this.initialRayTimes.length})`);
         // console.log(this.initialRayTimes);
-        // console.log(`Avg raytrace time per pass ${this.raytraceTimeSum / this.raytraceTimes.length})`);
-        // console.log(this.raytraceTimes);
-        // console.log(`Avg decompress time ${this.decompressTimeSum / this.decompressTimes.length})`);
+        // console.log(`Avg raytrace time per pass ${this.raytraceTimeSum /
+        // this.raytraceTimes.length})`); console.log(this.raytraceTimes); console.log(`Avg
+        // decompress time ${this.decompressTimeSum / this.decompressTimes.length})`);
         // console.log(this.decompressTimes);
     }
     return this.renderComplete;
@@ -1229,7 +1230,8 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
     // Reset the # of rays for each block
     pass.setPipeline(this.resetBlockNumRaysPipeline);
     pass.setBindGroup(0, this.resetBlockNumRaysBG);
-    pass.dispatch(Math.ceil(this.blockGridDims[0] / 8), this.blockGridDims[1], this.blockGridDims[2]);
+    pass.dispatch(
+        Math.ceil(this.blockGridDims[0] / 8), this.blockGridDims[1], this.blockGridDims[2]);
 
     // Compute which blocks are active and how many rays each has
     pass.setPipeline(this.markBlockActivePipeline);
@@ -1537,7 +1539,7 @@ VolumeRaycaster.prototype.decompressBlocks =
         var commandEncoder = this.device.createCommandEncoder();
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.decompressBlocksPipeline);
-        pass.setBindGroup(0, decompressBlocksBG); 
+        pass.setBindGroup(0, decompressBlocksBG);
         // Have to create bind group here because dynamic offsets are not allowed
         var decompressBlocksStartOffsetBG = this.device.createBindGroup({
             layout: this.ub1binding0BGLayout,

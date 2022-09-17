@@ -133,6 +133,10 @@ fn main(@builtin(global_invocation_id) g_invocation_id : vec3<u32>) {
         return;
     }
     */
+    if (g_invocation_id.x >= volume_params.image_width) {
+        return;
+    }
+
     let ray_index = g_invocation_id.x + g_invocation_id.y * volume_params.image_width;
     if (rays[ray_index].t == FLT_MAX) {
         return;

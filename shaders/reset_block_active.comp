@@ -27,6 +27,10 @@ layout(set = 0, binding = 2, std430) buffer BlockVisible
 void main(void)
 {
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+    if (gl_GlobalInvocationID.x >= n_blocks.x) {
+        return;
+    }
+
     const uint block_id = gl_GlobalInvocationID.x + n_blocks.x
         * (gl_GlobalInvocationID.y + n_blocks.y * gl_GlobalInvocationID.z);
 
