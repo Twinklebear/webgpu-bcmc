@@ -1414,7 +1414,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
         var rays = new Uint32Array(debugReadbackRay.getMappedRange());
         var rayInfoMapped = debugReadbackRayInformation.getMappedRange();
         var rayInformationFloat = new Float32Array(rayInfoMapped);
-        var rayInformationInt = new Float32Array(rayInfoMapped);
+        var rayInformationInt = new Uint32Array(rayInfoMapped);
 
         var blockRayCounts = {};
         for (var i = 0; i < numRaysActive; ++i) {
