@@ -1094,6 +1094,20 @@ VolumeRaycaster.prototype.renderSurface =
     console.log(`++++ Surface pass ${this.numPasses} ++++`);
     var startPass = performance.now();
 
+    // Reset the number of blocks visible/active each pass to reduce memory usage and skip
+    // computing on inactive blocks
+    {
+        var commandEncoder = this.device.createCommandEncoder();
+        var pass = commandEncoder.beginComputePass();
+        pass.setPipeline(this.resetBlockActivePipeline);
+        pass.setBindGroup(0, this.resetBlockActiveBG);
+        pass.dispatch(Math.ceil(this.blockGridDims[0] / 8),
+                      this.blockGridDims[1],
+                      this.blockGridDims[2]);
+        pass.end();
+        this.device.queue.submit([commandEncoder.finish()]);
+    }
+
     var start = performance.now();
     await this.macroTraverse();
     var end = performance.now();
