@@ -13,7 +13,7 @@ struct RayInfo {
     // largest member, which is the vec3 ray dir (whose alignment is same as vec4).
     // This results in the struct size rounding up to 32, since it has to start
     // on 16 byte boundaries.
-    // So we have a free 4 byte value to use if needed.
+    // So we have two free 4 byte values to use if needed.
 };
 
 struct BlockRange {
