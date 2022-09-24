@@ -25,6 +25,7 @@ layout(set = 0, binding = 2, std140) uniform ViewParams
     vec4 eye_pos;
     vec4 eye_dir;
     float near_plane;
+    uint current_pass_index;
 };
 
 layout(set = 0, binding = 3, std430) buffer BlockActive

@@ -65,6 +65,7 @@ layout(set = 0, binding = 2, std140) uniform ViewParams
     vec4 eye_pos;
     vec4 eye_dir;
     float near_plane;
+    uint current_pass_index;
 };
 */
 struct ViewParams {
@@ -72,6 +73,7 @@ struct ViewParams {
   eye_pos: float4,
   eye_dir: float4,
   near_plane : f32,
+  current_pass_index: u32,
 }
 @group(0) @binding(2) var<uniform> view_params : ViewParams;
 

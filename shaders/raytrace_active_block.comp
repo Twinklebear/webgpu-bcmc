@@ -11,6 +11,7 @@ layout(set = 1, binding = 0, std140) uniform ViewParams
     vec4 eye_pos;
     vec4 eye_dir;
     float near_plane;
+    uint current_pass_index;
 };
 
 layout(set = 1, binding = 1, std430) buffer RayInformation

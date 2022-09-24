@@ -16,15 +16,6 @@ var VolumeRaycaster = function(device, canvas) {
 
     this.numActiveBlocksStorage = 0;
 
-    var triTableBuf = device.createBuffer({
-        size: triTable.byteLength,
-        usage: GPUBufferUsage.UNIFORM,
-        mappedAtCreation: true,
-    });
-    new Int32Array(triTableBuf.getMappedRange()).set(triTable);
-    triTableBuf.unmap();
-    this.triTable = triTableBuf;
-
     this.computeBlockRangeBGLayout = device.createBindGroupLayout({
         entries: [
             {
@@ -184,7 +175,7 @@ var VolumeRaycaster = function(device, canvas) {
 
     // Set up compute initial rays pipeline
     this.viewParamBuf = device.createBuffer({
-        // mat4, 2 vec4's and a float + some extra to align
+        // mat4, 2 vec4's, a float and int + some extra to align
         size: 32 * 4,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -1220,8 +1211,16 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     // active rays? then only advancing them? We'll do that anyways so it would tell us when
     // we're done too (no rays active)
 
+    // Update the current pass index
+    var uploadPassIndex = this.device.createBuffer(
+        {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
+    new Int32Array(uploadPassIndex.getMappedRange()).set([this.numPasses]);
+    uploadPassIndex.unmap();
+
     var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(this.uploadIsovalueBuf, 0, this.volumeInfoBuffer, 52, 4);
+    commandEncoder.copyBufferToBuffer(
+        uploadPassIndex, 0, this.viewParamBuf, (16 + 8 + 1) * 4, 4);
 
     var pass = commandEncoder.beginComputePass();
 
@@ -1233,6 +1232,8 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
+
+    uploadPassIndex.destroy();
 };
 
 // Mark the active blocks for the current viewpoint/isovalue and count the # of rays
