@@ -22,8 +22,11 @@ function buildPushConstantsBuffer(device, totalWorkGroups, pushConstants)
     {
         var pushConstantsView = null;
         if (pushConstants) {
-            pushConstantsView = new Uint8Array(pushConstants);
-            console.log(`got push constants of size ${pushConstantsView.length}`);
+            if (pushConstants.byteLength > 248) {
+                throw Error("Push constants must be at most 248b");
+            }
+            pushConstantsView =
+                new Uint8Array(pushConstants.buffer, 0, pushConstants.byteLength);
         }
         var mapping = idOffsetsBuffer.getMappedRange();
         for (var i = 0; i < numDynamicOffsets; ++i) {
@@ -38,8 +41,7 @@ function buildPushConstantsBuffer(device, totalWorkGroups, pushConstants)
 
             // Write the push constants data
             var u32view = new Uint32Array(mapping, i * 256, 2);
-            u32view[0] = device.limits.maxComputeWorkgroupsPerDimension * i;
-            u32view[1] = totalWorkGroups;
+            u32view.set([device.limits.maxComputeWorkgroupsPerDimension * i, totalWorkGroups]);
 
             // Copy in any additional push constants data if provided
             if (pushConstantsView) {

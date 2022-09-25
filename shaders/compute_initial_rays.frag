@@ -19,17 +19,6 @@ layout(set = 0, binding = 2, std140) uniform VolumeParams
     uint image_width;
 };
 
-vec2 intersect_box(vec3 orig, vec3 dir, const vec3 box_min, const vec3 box_max) {
-    vec3 inv_dir = 1.0 / dir;
-    vec3 tmin_tmp = (box_min - orig) * inv_dir;
-    vec3 tmax_tmp = (box_max - orig) * inv_dir;
-    vec3 tmin = min(tmin_tmp, tmax_tmp);
-    vec3 tmax = max(tmin_tmp, tmax_tmp);
-    float t0 = max(tmin.x, max(tmin.y, tmin.z));
-    float t1 = min(tmax.x, min(tmax.y, tmax.z));
-    return vec2(t0, t1);
-}
-
 void main() {
     vec3 ray_dir = normalize(vray_dir);
 

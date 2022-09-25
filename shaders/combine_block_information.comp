@@ -2,7 +2,7 @@
 
 #include "util.glsl"
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, std430) buffer BlockInformation
 {
@@ -29,17 +29,29 @@ layout(set = 0, binding = 4, std430) buffer BlockActive
     uint block_active[];
 };
 
+layout(set = 1, binding = 0, std140) uniform BlockIDOffset
+{
+    uint id_offset;
+    uint total_work_groups;
+    uint total_active_blocks;
+};
+
 void main(void)
 {
+    const uint item_idx = gl_GlobalInvocationID.x + id_offset * gl_WorkGroupSize.x;
+    if (item_idx >= total_active_blocks) {
+        return;
+    }
     // Combine the buffers to fit in fewer storage buffers until limits are removed
     // Note that 8 will be supported soon in Chromium so we could remove this
     // This data is compacted down as it's run on the compacted block ids
-    const uint id = block_ids[gl_GlobalInvocationID.x];
-    blocks[gl_GlobalInvocationID.x].id = id;
-    blocks[gl_GlobalInvocationID.x].ray_offset = block_ray_offsets[id];
-    blocks[gl_GlobalInvocationID.x].num_rays = block_num_rays[id];
+    const uint id = block_ids[item_idx];
+    blocks[item_idx].id = id;
+    blocks[item_idx].ray_offset = block_ray_offsets[id];
+    blocks[item_idx].num_rays = block_num_rays[id];
     // If the block is running in this pipeline it must be visible,
     // so if it's not active, then it's an LOD block
-    blocks[gl_GlobalInvocationID.x].lod = block_active[id] == 0 ? 1 : 0;
+    // TODO: remove LOD
+    blocks[item_idx].lod = 0;
 }
 

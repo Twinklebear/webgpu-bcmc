@@ -33,6 +33,12 @@ layout(set = 0, binding = 3, std430) buffer RayInformation
     RayInfo rays[];
 };
 
+layout(set = 0, binding = 5, std430) buffer GridIterState
+{
+    // Each ray stores 2 iterator states, the coarse one followed by the fine one.
+    GridIteratorState iterator_state[];
+};
+
 uniform layout(set = 0, binding = 4, rgba8) writeonly image2D render_target;
 
 layout(set = 1, binding = 0, std430) buffer VoxelInformation
@@ -82,17 +88,28 @@ void main() {
     const vec3 coarse_grid_org = macrocell_grid_org * 0.25;
     const vec3 coarse_grid_ray_dir = macrocell_grid_ray_dir * 0.25;
 
+    bool first_coarse_iter = true;
+
     // Traverse the coarse grid
-    GridIterator coarse_grid_iter = init_grid_iterator(coarse_grid_org,
-            coarse_grid_ray_dir, rays[ray_index].t, coarse_grid_dims);
+    GridIterator coarse_grid_iter;
+    if (current_pass_index == 0) {
+        coarse_grid_iter = init_grid_iterator(coarse_grid_org,
+                coarse_grid_ray_dir, rays[ray_index].t, coarse_grid_dims);
+    } else {
+        coarse_grid_iter = restore_grid_iterator(coarse_grid_org,
+                coarse_grid_ray_dir, coarse_grid_dims, iterator_state[ray_index * 2]);
+    }
+
     ivec3 coarse_cell_id;
     vec2 coarse_cell_t_range;
-    while (grid_iterator_next_cell(coarse_grid_iter, coarse_cell_t_range, coarse_cell_id)) {
+    while (grid_iterator_get_cell(coarse_grid_iter, coarse_cell_t_range, coarse_cell_id)) {
         const uint coarse_cell_index = coarse_cell_id.x
             + coarse_grid_dims.x * (coarse_cell_id.y + coarse_grid_dims.y * coarse_cell_id.z);
         vec2 coarse_cell_range = coarse_cell_ranges[coarse_cell_index];
         // Skip all bricks in this coarse cell if we know they won't contain the isovalue
         if (isovalue < coarse_cell_range.x || isovalue > coarse_cell_range.y) {
+            first_coarse_iter = false;
+            grid_iterator_advance(coarse_grid_iter);
             continue;
         }
 
@@ -101,11 +118,20 @@ void main() {
             ivec3(min(coarse_grid_cell_org + vec3(4), macrogrid_dims) - coarse_grid_cell_org);
         // Traverse the macrocell grid within this coarse grid
         // We also translate the coarse grid cell to be at the origin for the grid iterator
-        GridIterator grid_iter = init_grid_iterator(macrocell_grid_org - coarse_grid_cell_org,
-                macrocell_grid_ray_dir, coarse_cell_t_range.x, macrocell_grid_dims);
+        GridIterator grid_iter;
+        if (current_pass_index == 0 || !first_coarse_iter) {
+            grid_iter = init_grid_iterator(macrocell_grid_org - coarse_grid_cell_org,
+                    macrocell_grid_ray_dir, coarse_cell_t_range.x, macrocell_grid_dims);
+        } else {
+            grid_iter = restore_grid_iterator(macrocell_grid_org - coarse_grid_cell_org,
+                    macrocell_grid_ray_dir, macrocell_grid_dims,
+                    iterator_state[ray_index * 2 + 1]);
+            grid_iterator_advance(grid_iter);
+        }
+
         ivec3 cell_id;
         vec2 cell_t_range;
-        while (grid_iterator_next_cell(grid_iter, cell_t_range, cell_id)) {
+        while (grid_iterator_get_cell(grid_iter, cell_t_range, cell_id)) {
             // Value range for a block is it's range combined with that of its neighbors to
             // the positive side 
             const uint block_index = coarse_grid_cell_org.x + cell_id.x
@@ -117,9 +143,25 @@ void main() {
                 rays[ray_index].block_id = block_index;
                 rays[ray_index].t = cell_t_range.x;
                 rays[ray_index].t_next = cell_t_range.y;
+
+                
+                // Note: grid dims is redundant and an easy one to not store
+                iterator_state[ray_index * 2].cell = coarse_grid_iter.cell;
+                iterator_state[ray_index * 2].t_max = coarse_grid_iter.t_max;
+                iterator_state[ray_index * 2].t = coarse_grid_iter.t;
+
+                // Writing it this way seems to result in some invalid code generated
+                // for the SPV -> WGSL step so it fails to compile
+                //iterator_state[ray_index * 2 + 1] = grid_iter;
+                iterator_state[ray_index * 2 + 1].cell = grid_iter.cell;
+                iterator_state[ray_index * 2 + 1].t_max = grid_iter.t_max;
+                iterator_state[ray_index * 2 + 1].t = grid_iter.t;
                 return;
             }
+            grid_iterator_advance(grid_iter);
         }
+        first_coarse_iter = false;
+        grid_iterator_advance(coarse_grid_iter);
     }
 
     rays[ray_index].block_id = UINT_MAX;

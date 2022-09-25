@@ -41,7 +41,7 @@ var VolumeRaycaster = function(device, canvas) {
             },
         ],
     });
-    this.computeBlockRangeS1B0DynamicBGLayout = device.createBindGroupLayout({
+    this.pushConstantS1B0DynamicLayout = device.createBindGroupLayout({
         entries: [{
             binding: 0,
             visibility: GPUShaderStage.COMPUTE,
@@ -51,7 +51,7 @@ var VolumeRaycaster = function(device, canvas) {
     this.computeBlockRangePipeline = device.createComputePipeline({
         layout: device.createPipelineLayout({
             bindGroupLayouts:
-                [this.computeBlockRangeBGLayout, this.computeBlockRangeS1B0DynamicBGLayout],
+                [this.computeBlockRangeBGLayout, this.pushConstantS1B0DynamicLayout],
         }),
         compute: {
             module: device.createShaderModule({
@@ -74,7 +74,7 @@ var VolumeRaycaster = function(device, canvas) {
         layout: device.createPipelineLayout({
             bindGroupLayouts: [
                 this.computeBlockRangeBGLayout,
-                this.computeBlockRangeS1B0DynamicBGLayout,
+                this.pushConstantS1B0DynamicLayout,
                 this.computeVoxelRangeBGLayout
             ]
         }),
@@ -185,6 +185,13 @@ var VolumeRaycaster = function(device, canvas) {
     this.rayInformationBuffer = device.createBuffer({
         size: this.canvas.width * this.canvas.height * 32,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    // Each ray stores 2 iterator states, the coarse one followed by the fine one.
+    // Each state is 32b
+    this.gridIteratorBuffer = device.createBuffer({
+        size: this.canvas.width * this.canvas.height * 64,
+        usage: GPUBufferUsage.STORAGE,
     });
 
     this.resetRaysBGLayout = device.createBindGroupLayout({
@@ -351,6 +358,13 @@ var VolumeRaycaster = function(device, canvas) {
                 binding: 4,
                 visibility: GPUShaderStage.COMPUTE,
                 storageTexture: {access: "write-only", format: renderTargetFormat}
+            },
+            {
+                binding: 5,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
             }
         ],
     });
@@ -572,8 +586,10 @@ var VolumeRaycaster = function(device, canvas) {
         ]
     });
     this.combineBlockInformationPipeline = device.createComputePipeline({
-        layout: device.createPipelineLayout(
-            {bindGroupLayouts: [this.combineBlockInformationBGLayout]}),
+        layout: device.createPipelineLayout({
+            bindGroupLayouts:
+                [this.combineBlockInformationBGLayout, this.pushConstantS1B0DynamicLayout]
+        }),
         compute: {
             module: device.createShaderModule({code: combine_block_information_comp_spv}),
             entryPoint: "main"
@@ -652,7 +668,11 @@ var VolumeRaycaster = function(device, canvas) {
 
     this.raytraceBlocksPipeline = device.createComputePipeline({
         layout: device.createPipelineLayout({
-            bindGroupLayouts: [this.rtBlocksPipelineBG0Layout, this.rtBlocksPipelineBG1Layout]
+            bindGroupLayouts: [
+                this.rtBlocksPipelineBG0Layout,
+                this.rtBlocksPipelineBG1Layout,
+                this.pushConstantS1B0DynamicLayout
+            ]
         }),
         compute: {
             module: device.createShaderModule({code: raytrace_active_block_comp_spv}),
@@ -831,7 +851,13 @@ VolumeRaycaster.prototype.setCompressedVolume =
                     buffer: this.rayInformationBuffer,
                 },
             },
-            {binding: 4, resource: this.renderTarget.createView()}
+            {binding: 4, resource: this.renderTarget.createView()},
+            {
+                binding: 5,
+                resource: {
+                    buffer: this.gridIteratorBuffer,
+                },
+            }
         ],
     });
 
@@ -978,7 +1004,7 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
     var pushConstants = buildPushConstantsBuffer(this.device, totalWorkGroups);
 
     var blockIDOffsetBG = this.device.createBindGroup({
-        layout: this.computeBlockRangeS1B0DynamicBGLayout,
+        layout: this.pushConstantS1B0DynamicLayout,
         entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
     });
 
@@ -1471,26 +1497,55 @@ VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks
     });
 
     var commandEncoder = this.device.createCommandEncoder();
-    var pass = commandEncoder.beginComputePass();
+    {
+        const groupThreadCount = 64;
+        const totalWorkGroups = Math.ceil(numActiveBlocks / groupThreadCount);
 
-    // First make the combined block information buffer (to fit in 6 storage buffers)
-    // The limit will be bumped up to 8 so we could remove this piece in a bit once
-    // the change lands in Chromium
-    pass.setPipeline(this.combineBlockInformationPipeline);
-    pass.setBindGroup(0, this.combineBlockInformationBG);
-    pass.dispatch(Math.ceil(numActiveBlocks), 1, 1);
+        var pushConstants = buildPushConstantsBuffer(
+            this.device, totalWorkGroups, new Uint32Array([numActiveBlocks]));
 
-    // TODO: Might be worth for data sets where many blocks
-    // project to a lot of pixels to split up the dispatches,
-    // and do multiple dispatch indirect for the blocks touching
-    // many pixels so that we don't serialize so badly on them, while
-    // still doing a single dispatch for all blocks touching <= 64 pixels
-    // since that will be most of the blocks, especially for large data.
-    pass.setPipeline(this.raytraceBlocksPipeline);
-    pass.setBindGroup(0, rtBlocksPipelineBG0);
-    pass.setBindGroup(1, this.rtBlocksPipelineBG1);
-    pass.dispatch(numActiveBlocks, 1, 1);
-    pass.end();
+        var blockIDOffsetBG = this.device.createBindGroup({
+            layout: this.pushConstantS1B0DynamicLayout,
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 12}}]
+        });
+
+        var pass = commandEncoder.beginComputePass();
+        // First make the combined block information buffer (to fit in 6 storage buffers)
+        // The limit will be bumped up to 8 so we could remove this piece in a bit once
+        // the change lands in Chromium
+        pass.setPipeline(this.combineBlockInformationPipeline);
+        pass.setBindGroup(0, this.combineBlockInformationBG);
+        for (var i = 0; i < pushConstants.nOffsets; ++i) {
+            pass.setBindGroup(1, blockIDOffsetBG, pushConstants.dynamicOffsets, i, 1);
+            pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+        }
+        pass.end();
+    }
+
+    {
+        var pushConstants = buildPushConstantsBuffer(this.device, numActiveBlocks);
+
+        var blockIDOffsetBG = this.device.createBindGroup({
+            layout: this.pushConstantS1B0DynamicLayout,
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 8}}]
+        });
+
+        var pass = commandEncoder.beginComputePass();
+        // TODO: Might be worth for data sets where many blocks
+        // project to a lot of pixels to split up the dispatches,
+        // and do multiple dispatch indirect for the blocks touching
+        // many pixels so that we don't serialize so badly on them, while
+        // still doing a single dispatch for all blocks touching <= 64 pixels
+        // since that will be most of the blocks, especially for large data.
+        pass.setPipeline(this.raytraceBlocksPipeline);
+        pass.setBindGroup(0, rtBlocksPipelineBG0);
+        pass.setBindGroup(1, this.rtBlocksPipelineBG1);
+        for (var i = 0; i < pushConstants.nOffsets; ++i) {
+            pass.setBindGroup(2, blockIDOffsetBG, pushConstants.dynamicOffsets, i, 1);
+            pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+        }
+        pass.end();
+    }
 
     await this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
