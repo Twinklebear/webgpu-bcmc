@@ -237,29 +237,38 @@ void main(void)
 {
     // Note: not scale applied to id_offset here, because the 64 threads in each
     // work group are responsible for the same block
-    if (gl_WorkGroupID.x + id_offset >= total_active_blocks) {
-        return;
-    }
+    // if (gl_WorkGroupID.x + id_offset >= total_active_blocks) {
+    //     return;
+    // }
 
     if (gl_LocalInvocationID.x == 0) {
         block_info = blocks[gl_WorkGroupID.x + id_offset];
     }
+
+    // Note: Barriers must be called from uniform control flow, so can't call these
+    // conditional return statements before calling barrier or load_block.
     barrier();
+    uvec3 block_dims = load_block(block_info.id);
+    if (gl_WorkGroupID.x + id_offset >= total_active_blocks) {
+        return;
+    }
     if (block_info.num_rays == 0) { 
         return;
     }
+
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
 
     // Block position in voxels
     const uvec3 block_pos = block_id_to_pos(block_info.id) * 4;
 
-    uvec3 block_dims;
-    if (block_info.lod == 0) {
-        block_dims = load_block(block_info.id);
-    } else {
-        // Don't load the block data if we're doing LOD
-        block_dims = compute_block_dims_with_ghost(block_pos / 4);
-    }
+    // See note on barriers above.
+    // uvec3 block_dims;
+    // if (block_info.lod == 0) {
+        // block_dims = load_block(block_info.id);
+    // } else {
+    //     // Don't load the block data if we're doing LOD
+    //     block_dims = compute_block_dims_with_ghost(block_pos / 4);
+    // }
 
     vec3 volume_translation = vec3(0) - volume_scale.xyz * 0.5;
     vec3 transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale.xyz;
