@@ -175,7 +175,7 @@ var VolumeRaycaster = function(device, canvas) {
 
     // Set up compute initial rays pipeline
     this.viewParamBuf = device.createBuffer({
-        // mat4, 2 vec4's, a float and int + some extra to align
+        // mat4, 2 vec4's, a float, 2 uint + some extra to align
         size: 32 * 4,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -184,6 +184,13 @@ var VolumeRaycaster = function(device, canvas) {
     // so just allocate it once up front
     this.rayInformationBuffer = device.createBuffer({
         size: this.canvas.width * this.canvas.height * 32,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    // We need canvas.width * canvas.height RayIDs for speculation,
+    // with ray indexes repeated as speculation occurs
+    this.speculativeRayIDBuffer = device.createBuffer({
+        size: this.canvas.width * this.canvas.height * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
 
@@ -210,6 +217,27 @@ var VolumeRaycaster = function(device, canvas) {
         compute: {
             module: device.createShaderModule({
                 code: reset_rays_comp_spv,
+            }),
+            entryPoint: "main",
+        },
+    });
+
+    this.resetSpeculativeIDsBGLayout = device.createBindGroupLayout({
+        entries: [
+            {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
+            {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}}
+        ]
+    });
+
+    this.resetSpeculativeIDsPipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout({
+            bindGroupLayouts: [
+                this.resetSpeculativeIDsBGLayout,
+            ],
+        }),
+        compute: {
+            module: device.createShaderModule({
+                code: reset_speculative_ids_comp_spv,
             }),
             entryPoint: "main",
         },
@@ -361,6 +389,20 @@ var VolumeRaycaster = function(device, canvas) {
             },
             {
                 binding: 5,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
+            },
+            {
+                binding: 6,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
+            },
+            {
+                binding: 7,
                 visibility: GPUShaderStage.COMPUTE,
                 buffer: {
                     type: "storage",
@@ -800,6 +842,14 @@ VolumeRaycaster.prototype.setCompressedVolume =
         ]
     });
 
+    this.resetSpeculativeIDsBG = this.device.createBindGroup({
+        layout: this.resetSpeculativeIDsBGLayout,
+        entries: [
+            {binding: 0, resource: {buffer: this.volumeInfoBuffer}},
+            {binding: 1, resource: {buffer: this.speculativeRayIDBuffer}},
+        ]
+    });
+
     this.initialRaysBindGroup = this.device.createBindGroup({
         layout: this.computeInitialRaysBGLayout,
         entries: [
@@ -856,6 +906,18 @@ VolumeRaycaster.prototype.setCompressedVolume =
                 binding: 5,
                 resource: {
                     buffer: this.gridIteratorBuffer,
+                },
+            },
+            {
+                binding: 6,
+                resource: {
+                    buffer: this.speculativeRayIDBuffer,
+                },
+            },
+            {
+                binding: 7,
+                resource: {
+                    buffer: this.rayActiveCompactOffsetBuffer,
                 },
             }
         ],
@@ -1166,6 +1228,43 @@ VolumeRaycaster.prototype.renderSurface =
         end = performance.now();
         console.log(`Sort active rays by block: ${end - start}ms`);
 
+        // TODO: Uploading speculation count here is incorrect because numRaysActive doesn't
+        // include the rays that terminate in the following raytrace blocks step. This also can lead to 
+        // further problems when we fill the speculatedRayIdBuffer in macro traverse, as the "holes" caused
+        // by the rays with t > FLOAT_MAX could be filled with arbitrary IDs.
+        var commandEncoder = this.device.createCommandEncoder();
+        var speculationCount = Math.floor(this.canvas.width * this.canvas.height / numRaysActive);
+        console.log(`Speculation count is ${speculationCount}`);
+        var uploadSpeculationCount = this.device.createBuffer(
+            {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
+        new Uint32Array(uploadSpeculationCount.getMappedRange()).set([speculationCount]);
+        uploadSpeculationCount.unmap();
+        commandEncoder.copyBufferToBuffer(
+            uploadSpeculationCount, 0, this.viewParamBuf, (16 + 8 + 1 + 1) * 4, 4);
+
+        // var pass = commandEncoder.beginComputePass();
+        // pass.setPipeline(this.resetBlockActivePipeline);
+        // pass.setBindGroup(0, this.resetBlockActiveBG);
+        // pass.dispatch(Math.ceil(this.blockGridDims[0] / 8),
+        //                 this.blockGridDims[1],
+        //                 this.blockGridDims[2]);
+        // pass.end();
+        // this.device.queue.submit([commandEncoder.finish()]);    
+        // var readbackCompactOffsetBuffer = this.device.createBuffer({
+        //     size: this.rayActiveCompactOffsetBuffer.size,
+        //     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+        // });
+
+        // var commandEncoder = this.device.createCommandEncoder();
+        // commandEncoder.copyBufferToBuffer(
+        //     this.rayActiveCompactOffsetBuffer, 0, readbackCompactOffsetBuffer, 0, this.rayActiveCompactOffsetBuffer.size);
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+
+        // await readbackCompactOffsetBuffer.mapAsync(GPUMapMode.READ);
+        // var rayOffsets = new Uint32Array(readbackCompactOffsetBuffer.getMappedRange());
+        // console.log(rayOffsets);
+
         start = performance.now();
         await this.raytraceVisibleBlocks(numActiveBlocks);
         end = performance.now();
@@ -1236,6 +1335,14 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     // TODO: Would it be worth doing a scan and compact to find just the IDs of the currently
     // active rays? then only advancing them? We'll do that anyways so it would tell us when
     // we're done too (no rays active)
+    var commandEncoder = this.device.createCommandEncoder();
+
+    // Reset speculative IDs buffer (here for now but could be moved)
+    var resetSpecIDsPass = commandEncoder.beginComputePass();
+    resetSpecIDsPass.setBindGroup(0, this.resetSpeculativeIDsBG);
+    resetSpecIDsPass.setPipeline(this.resetSpeculativeIDsPipeline);
+    resetSpecIDsPass.dispatch(Math.ceil(this.canvas.width), this.canvas.height, 1);
+    resetSpecIDsPass.end();
 
     // Update the current pass index
     var uploadPassIndex = this.device.createBuffer(
@@ -1243,7 +1350,6 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     new Int32Array(uploadPassIndex.getMappedRange()).set([this.numPasses]);
     uploadPassIndex.unmap();
 
-    var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(this.uploadIsovalueBuf, 0, this.volumeInfoBuffer, 52, 4);
     commandEncoder.copyBufferToBuffer(
         uploadPassIndex, 0, this.viewParamBuf, (16 + 8 + 1) * 4, 4);
@@ -1258,6 +1364,20 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
+
+    // Log speculative ray IDs buffer
+    var readbackSpeculativeIDBuffer = this.device.createBuffer({
+        size: this.speculativeRayIDBuffer.size,
+        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+    });
+    var commandEncoder = this.device.createCommandEncoder();
+    commandEncoder.copyBufferToBuffer(
+        this.speculativeRayIDBuffer, 0, readbackSpeculativeIDBuffer, 0, this.speculativeRayIDBuffer.size);
+    this.device.queue.submit([commandEncoder.finish()]);
+    await this.device.queue.onSubmittedWorkDone();
+    await readbackSpeculativeIDBuffer.mapAsync(GPUMapMode.READ);
+    var specIDs = new Int32Array(readbackSpeculativeIDBuffer.getMappedRange());
+    console.log(specIDs);
 
     uploadPassIndex.destroy();
 };

@@ -21,6 +21,7 @@ layout(set = 0, binding = 1, std140) uniform ViewParams
     vec4 eye_dir;
     float near_plane;
     uint current_pass_index;
+    uint speculation_count;
 };
 
 layout(set = 0, binding = 2, std430) buffer BlockRanges
@@ -37,6 +38,16 @@ layout(set = 0, binding = 5, std430) buffer GridIterState
 {
     // Each ray stores 2 iterator states, the coarse one followed by the fine one.
     GridIteratorState iterator_state[];
+};
+
+layout(set = 0, binding = 6, std430) buffer RayIDs
+{
+    int ray_ids[];
+};
+
+layout(set = 0, binding = 7, std430) buffer RayOffsets
+{
+    uint ray_offsets[];
 };
 
 uniform layout(set = 0, binding = 4, rgba8) writeonly image2D render_target;
@@ -65,6 +76,16 @@ void main() {
 
     if (rays[ray_index].t == FLT_MAX) {
         return;
+    }
+
+    // Fill speculated ray ID buffer, use '-1' as a hole filler for extra space at the end and rays
+    // terminated by last raytrace active blocks
+    if (speculation_count > 0) {
+        for (int i = 0; i < speculation_count; i++) {
+            ray_ids[ray_offsets[ray_index] * speculation_count + i] = int(ray_index);
+        }
+    } else {
+        ray_ids[ray_index] = int(ray_index);
     }
 
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);

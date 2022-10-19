@@ -46,7 +46,8 @@ shaders = [
     "combine_block_information.comp",
     "raytrace_active_block.comp",
     "compute_voxel_range.comp",
-    "compute_coarse_cell_range.comp"
+    "compute_coarse_cell_range.comp",
+    "reset_speculative_ids.comp"
 ]
 
 try:
