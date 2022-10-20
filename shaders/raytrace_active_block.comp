@@ -34,6 +34,11 @@ layout(set = 1, binding = 5, std430) buffer BlockRanges
     BlockRange block_ranges[];
 };
 
+layout(set = 1, binding = 6, std430) buffer RayBlockIDs
+{
+    uint block_ids[];
+};
+
 uniform layout(set = 1, binding = 4, rgba8) writeonly image2D render_target;
 
 layout(set = 2, binding = 0, std140) uniform BlockIDOffset
@@ -344,8 +349,8 @@ void main(void)
 
             if (hit_surface) {
                 // color.xyz = vec3(rays[ray_index].t / (padded_dims.x));
-                rays[ray_index].block_id = UINT_MAX;
-                rays[ray_index].t_next = FLT_MAX;
+                block_ids[ray_index] = UINT_MAX;
+                // rays[ray_index].t_next = FLT_MAX;
                 rays[ray_index].t = FLT_MAX;
 
                 vec3 N = compute_normal(v000, hit_p, vertex_values);

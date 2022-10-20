@@ -14,17 +14,12 @@ layout(set = 0, binding = 0, std140) uniform VolumeParams
     uint image_width;
 };
 
-layout(set = 0, binding = 1, std430) buffer RayInformation
-{
-    RayInfo rays[];
-};
-
-layout(set = 0, binding = 2, std430) buffer RayBlockID
+layout(set = 0, binding = 1, std430) buffer RayBlockID
 {
     uint block_id[];
 };
 
-layout(set = 0, binding = 3, std430) buffer RayActive
+layout(set = 0, binding = 2, std430) buffer RayActive
 {
     uint ray_active[];
 };
@@ -40,7 +35,6 @@ void main() {
     // The ray IDs are built during the stream compact IDs, so we don't need to
     // write them out here
     uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
-    block_id[ray_index] = rays[ray_index].block_id;
-    ray_active[ray_index] = rays[ray_index].block_id != UINT_MAX ? 1 : 0;
+    ray_active[ray_index] = block_id[ray_index] != UINT_MAX ? 1 : 0;
 }
 

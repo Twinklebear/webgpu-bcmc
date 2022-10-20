@@ -19,6 +19,11 @@ layout(set = 0, binding = 2, std140) uniform VolumeParams
     uint image_width;
 };
 
+layout(set = 0, binding = 3, std430) buffer RayBlockIDs
+{
+    uint block_ids[];
+};
+
 void main() {
     vec3 ray_dir = normalize(vray_dir);
 
@@ -36,7 +41,7 @@ void main() {
     const uint pixel = uint(gl_FragCoord.x) + image_width * uint(gl_FragCoord.y);
 	if (t_hit.x < t_hit.y) {
         rays[pixel].ray_dir = grid_ray_dir;
-        rays[pixel].block_id = UINT_MAX;
+        block_ids[pixel] = UINT_MAX;
         rays[pixel].t = t_hit.x;
     }
 }

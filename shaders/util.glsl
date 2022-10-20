@@ -6,9 +6,9 @@
 
 struct RayInfo {
     vec3 ray_dir;
-    uint block_id;
+    // uint block_id;
     float t;
-    float t_next;
+    // float t_next;
     // NOTE: std430 layout rules dictate the struct alignment is that of its
     // largest member, which is the vec3 ray dir (whose alignment is same as vec4).
     // This results in the struct size rounding up to 32, since it has to start

@@ -24,6 +24,11 @@ layout(set = 0, binding = 2, std430) buffer RayInformation
     RayInfo rays[];
 };
 
+layout(set = 0, binding = 4, std430) buffer RayBlockIDs
+{
+    uint block_ids[];
+};
+
 uniform layout(set = 0, binding = 3, rgba8) writeonly image2D render_target;
 
 void main(void)
@@ -33,7 +38,7 @@ void main(void)
         return;
     }
 
-    const uint block_id = rays[ray_index].block_id;
+    const uint block_id = block_ids[ray_index];
     vec4 color;
     // We don't really bother to find the max, though we could do it in the
     // shader since this is just for debugging.

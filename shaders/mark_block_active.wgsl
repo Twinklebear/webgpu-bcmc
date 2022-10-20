@@ -14,12 +14,12 @@ type uint4 = vec4<u32>;
 
 struct RayInfo {
     ray_dir: float3,
-    block_id: u32,
+    // block_id: u32,
     t: f32,
-    t_next: f32,
+    // t_next: f32,
     // For WGSL we need to pad the struct up to 32 bytes so it matches
     // the GLSL struct alignment/padding rules we had before
-    @size(8) pad: f32
+    // @size(8) pad: f32
 };
 
 /*
@@ -110,6 +110,8 @@ layout(set = 0, binding = 6, std430) buffer BlockVisible
 };
 */
 @group(0) @binding(6) var<storage, read_write> block_visible : array<u32>;
+@group(0) @binding(7) var<storage, read_write> block_ids : array<u32>;
+
 
 //uniform layout(set = 1, binding = 0, rgba8) writeonly image2D render_target;
 @group(1) @binding(0) var render_target : texture_storage_2d<rgba8unorm, write>;
@@ -150,7 +152,7 @@ fn main(@builtin(global_invocation_id) g_invocation_id : vec3<u32>) {
     const uvec3 block_pos = block_id_to_pos(block_id);
     */
     let n_blocks = volume_params.padded_dims.xyz / uint3(4u);
-    let block_id = rays[ray_index].block_id;
+    let block_id = block_ids[ray_index];
     let block_pos = block_id_to_pos(block_id);
 
     // May need to become an atomic or? I don't think it should

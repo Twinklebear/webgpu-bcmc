@@ -183,7 +183,7 @@ var VolumeRaycaster = function(device, canvas) {
     // We'll need a max of canvas.width * canvas.height RayInfo structs in the buffer,
     // so just allocate it once up front
     this.rayInformationBuffer = device.createBuffer({
-        size: this.canvas.width * this.canvas.height * 32,
+        size: this.canvas.width * this.canvas.height * 16,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
 
@@ -204,7 +204,8 @@ var VolumeRaycaster = function(device, canvas) {
     this.resetRaysBGLayout = device.createBindGroupLayout({
         entries: [
             {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
-            {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}}
+            {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
+            {binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
         ]
     });
 
@@ -264,6 +265,13 @@ var VolumeRaycaster = function(device, canvas) {
                 visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
                 buffer: {
                     type: "uniform",
+                }
+            },
+            {
+                binding: 3,
+                visibility: GPUShaderStage.FRAGMENT,
+                buffer: {
+                    type: "storage",
                 }
             },
         ],
@@ -407,6 +415,13 @@ var VolumeRaycaster = function(device, canvas) {
                 buffer: {
                     type: "storage",
                 }
+            },
+            {
+                binding: 8,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
             }
         ],
     });
@@ -486,6 +501,7 @@ var VolumeRaycaster = function(device, canvas) {
             {binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
             {binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
             {binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+            {binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
         ]
     });
     this.markBlockActivePipeline = device.createComputePipeline({
@@ -503,6 +519,7 @@ var VolumeRaycaster = function(device, canvas) {
             {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
             {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
             {binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+            {binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
             {
                 binding: 3,
                 visibility: GPUShaderStage.COMPUTE,
@@ -570,13 +587,6 @@ var VolumeRaycaster = function(device, canvas) {
                     type: "storage",
                 }
             },
-            {
-                binding: 3,
-                visibility: GPUShaderStage.COMPUTE,
-                buffer: {
-                    type: "storage",
-                }
-            }
         ],
     });
     this.writeRayAndBlockIDPipeline = device.createComputePipeline({
@@ -700,6 +710,13 @@ var VolumeRaycaster = function(device, canvas) {
             },
             {
                 binding: 5,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
+            },
+            {
+                binding: 6,
                 visibility: GPUShaderStage.COMPUTE,
                 buffer: {
                     type: "storage",
@@ -839,6 +856,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
         entries: [
             {binding: 0, resource: {buffer: this.rayInformationBuffer}},
             {binding: 1, resource: {buffer: this.volumeInfoBuffer}},
+            {binding: 2, resource: {buffer: this.rayBlockIDBuffer}},
         ]
     });
 
@@ -869,6 +887,12 @@ VolumeRaycaster.prototype.setCompressedVolume =
                 binding: 2,
                 resource: {
                     buffer: this.volumeInfoBuffer,
+                },
+            },
+            {
+                binding: 3,
+                resource: {
+                    buffer: this.rayBlockIDBuffer,
                 },
             },
         ],
@@ -919,6 +943,12 @@ VolumeRaycaster.prototype.setCompressedVolume =
                 resource: {
                     buffer: this.rayActiveCompactOffsetBuffer,
                 },
+            },
+            {
+                binding: 8,
+                resource: {
+                    buffer: this.rayBlockIDBuffer,
+                }
             }
         ],
     });
@@ -949,6 +979,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
             {binding: 4, resource: {buffer: this.blockNumRaysBuffer}},
             {binding: 5, resource: {buffer: this.rayInformationBuffer}},
             {binding: 6, resource: {buffer: this.blockVisibleBuffer}},
+            {binding: 7, resource: {buffer: this.rayBlockIDBuffer}},
         ]
     });
 
@@ -956,9 +987,8 @@ VolumeRaycaster.prototype.setCompressedVolume =
         layout: this.writeRayAndBlockIDBGLayout,
         entries: [
             {binding: 0, resource: {buffer: this.volumeInfoBuffer}},
-            {binding: 1, resource: {buffer: this.rayInformationBuffer}},
-            {binding: 2, resource: {buffer: this.rayBlockIDBuffer}},
-            {binding: 3, resource: {buffer: this.rayActiveBuffer}},
+            {binding: 1, resource: {buffer: this.rayBlockIDBuffer}},
+            {binding: 2, resource: {buffer: this.rayActiveBuffer}},
         ]
     });
 
@@ -985,6 +1015,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
             {binding: 3, resource: {buffer: this.combinedBlockInformationBuffer}},
             {binding: 4, resource: this.renderTarget.createView()},
             {binding: 5, resource: {buffer: this.blockRangesBuffer}},
+            {binding: 6, resource: {buffer: this.rayBlockIDBuffer}},
         ]
     });
 };
@@ -1366,18 +1397,18 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     await this.device.queue.onSubmittedWorkDone();
 
     // Log speculative ray IDs buffer
-    var readbackSpeculativeIDBuffer = this.device.createBuffer({
-        size: this.speculativeRayIDBuffer.size,
-        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-    });
-    var commandEncoder = this.device.createCommandEncoder();
-    commandEncoder.copyBufferToBuffer(
-        this.speculativeRayIDBuffer, 0, readbackSpeculativeIDBuffer, 0, this.speculativeRayIDBuffer.size);
-    this.device.queue.submit([commandEncoder.finish()]);
-    await this.device.queue.onSubmittedWorkDone();
-    await readbackSpeculativeIDBuffer.mapAsync(GPUMapMode.READ);
-    var specIDs = new Int32Array(readbackSpeculativeIDBuffer.getMappedRange());
-    console.log(specIDs);
+    // var readbackSpeculativeIDBuffer = this.device.createBuffer({
+    //     size: this.speculativeRayIDBuffer.size,
+    //     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+    // });
+    // var commandEncoder = this.device.createCommandEncoder();
+    // commandEncoder.copyBufferToBuffer(
+    //     this.speculativeRayIDBuffer, 0, readbackSpeculativeIDBuffer, 0, this.speculativeRayIDBuffer.size);
+    // this.device.queue.submit([commandEncoder.finish()]);
+    // await this.device.queue.onSubmittedWorkDone();
+    // await readbackSpeculativeIDBuffer.mapAsync(GPUMapMode.READ);
+    // var specIDs = new Int32Array(readbackSpeculativeIDBuffer.getMappedRange());
+    // console.log(specIDs);
 
     uploadPassIndex.destroy();
 };
@@ -1434,6 +1465,7 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
                 maxRays = Math.max(raysPerBlock[i], maxRays);
             }
         }
+        console.log(raysPerBlock[raysPerBlock.length - 1]);
         if (activeBlocks > 0) {
             console.log(`RPB Avg rays per block ${
                 avgRaysPerBlock / activeBlocks} (# active = ${activeBlocks})`);
@@ -1446,6 +1478,7 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
         readbackBlockNumRaysBuffer.destroy();
     }
     */
+    
 };
 
 // Scan the blockNumRaysBuffer storing the output in blockRayOffsetBuffer and

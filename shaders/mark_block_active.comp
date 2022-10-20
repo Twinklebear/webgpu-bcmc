@@ -49,6 +49,11 @@ layout(set = 0, binding = 6, std430) buffer BlockVisible
     uint block_visible[];
 };
 
+layout(set = 0, binding = 7, std430) buffer RayBlockIDs
+{
+    uint block_ids[];
+};
+
 uniform layout(set = 1, binding = 0, rgba8) writeonly image2D render_target;
 
 uvec3 block_id_to_pos(uint id)
@@ -73,7 +78,7 @@ void main(void)
     }
 
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
-    const uint block_id = rays[ray_index].block_id;
+    const uint block_id = block_ids[ray_index];
     const uvec3 block_pos = block_id_to_pos(block_id);
 
     // May need to become an atomic or? I don't think it should
