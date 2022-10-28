@@ -141,10 +141,7 @@ fn main(@builtin(global_invocation_id) g_invocation_id : vec3<u32>) {
         return;
     }
 
-    let ray_index = g_invocation_id.x + g_invocation_id.y * volume_params.image_width;
-    if (rays[ray_index].t == FLT_MAX) {
-        return;
-    }
+    let block_index = g_invocation_id.x + g_invocation_id.y * volume_params.image_width;
 
     /*
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
@@ -152,7 +149,10 @@ fn main(@builtin(global_invocation_id) g_invocation_id : vec3<u32>) {
     const uvec3 block_pos = block_id_to_pos(block_id);
     */
     let n_blocks = volume_params.padded_dims.xyz / uint3(4u);
-    let block_id = block_ids[ray_index];
+    let block_id = block_ids[block_index];
+    if (block_id == UINT_MAX) {
+        return;
+    }
     let block_pos = block_id_to_pos(block_id);
 
     // May need to become an atomic or? I don't think it should
