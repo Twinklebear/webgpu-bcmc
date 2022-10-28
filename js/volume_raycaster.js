@@ -1264,7 +1264,8 @@ VolumeRaycaster.prototype.renderSurface =
         // further problems when we fill the speculatedRayIdBuffer in macro traverse, as the "holes" caused
         // by the rays with t > FLOAT_MAX could be filled with arbitrary IDs.
         var commandEncoder = this.device.createCommandEncoder();
-        var speculationCount = Math.floor(this.canvas.width * this.canvas.height / numRaysActive);
+        // var speculationCount = Math.floor(this.canvas.width * this.canvas.height / numRaysActive);
+        var speculationCount = 0;
         console.log(`Speculation count is ${speculationCount}`);
         var uploadSpeculationCount = this.device.createBuffer(
             {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
@@ -1530,9 +1531,10 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     }
     var startCompacts = performance.now();
     // Compact the active ray IDs and their block IDs down
-    await this.streamCompact.compactActiveIDs(this.canvas.width * this.canvas.height,
+    await this.streamCompact.compactActive(this.canvas.width * this.canvas.height,
                                               this.rayActiveBuffer,
                                               this.rayActiveCompactOffsetBuffer,
+                                              this.speculativeRayIDBuffer,
                                               this.rayIDBuffer);
 
     await this.streamCompact.compactActive(this.canvas.width * this.canvas.height,
