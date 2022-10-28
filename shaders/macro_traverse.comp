@@ -167,8 +167,13 @@ void main() {
             const vec2 cell_range = voxel_ranges[block_index];
 
             if (isovalue >= cell_range.x && isovalue <= cell_range.y) {
-                block_ids[ray_offsets[ray_index] * speculation_count + speculated] = block_index;
-                speculated++;
+                if (speculation_count > 0) {
+                    block_ids[ray_offsets[ray_index] * speculation_count + speculated] = block_index;
+                    speculated++;
+                } else {
+                    block_ids[ray_index] = block_index;
+                }
+
                 // This is never actually used !
                 // rays[ray_index].t = cell_t_range.x;
                 // rays[ray_index].t_next = cell_t_range.y;
@@ -185,7 +190,7 @@ void main() {
                 iterator_state[ray_index * 2 + 1].cell = grid_iter.cell;
                 iterator_state[ray_index * 2 + 1].t_max = grid_iter.t_max;
                 iterator_state[ray_index * 2 + 1].t = grid_iter.t;
-                if (speculated == speculation_count) {
+                if (speculated == speculation_count || speculation_count < 1) {
                     return;
                 }
             }
