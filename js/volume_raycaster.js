@@ -188,9 +188,14 @@ var VolumeRaycaster = function(device, canvas) {
     });
 
     // We need canvas.width * canvas.height RayIDs for speculation,
-    // with ray indexes repeated as speculation occurs
+    // with ray indices repeated as speculation occurs
     this.speculativeRayIDBuffer = device.createBuffer({
         size: this.canvas.width * this.canvas.height * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    this.rayRGBZBuffer = device.createBuffer({
+        size: this.canvas.width * this.canvas.height * 4 * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
 
@@ -223,26 +228,28 @@ var VolumeRaycaster = function(device, canvas) {
         },
     });
 
-    this.resetSpeculativeIDsBGLayout = device.createBindGroupLayout({
-        entries: [
-            {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
-            {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}}
-        ]
-    });
+    // this.initSpeculativeIDsBGLayout = device.createBindGroupLayout({
+    //     entries: [
+    //         {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
+    //         {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
+    //         {binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+    //         {binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}}
+    //     ]
+    // });
 
-    this.resetSpeculativeIDsPipeline = device.createComputePipeline({
-        layout: device.createPipelineLayout({
-            bindGroupLayouts: [
-                this.resetSpeculativeIDsBGLayout,
-            ],
-        }),
-        compute: {
-            module: device.createShaderModule({
-                code: reset_speculative_ids_comp_spv,
-            }),
-            entryPoint: "main",
-        },
-    });
+    // this.initSpeculativeIDsPipeline = device.createComputePipeline({
+    //     layout: device.createPipelineLayout({
+    //         bindGroupLayouts: [
+    //             this.initSpeculativeIDsBGLayout,
+    //         ],
+    //     }),
+    //     compute: {
+    //         module: device.createShaderModule({
+    //             code: speculative_ids_init_comp_spv,
+    //         }),
+    //         entryPoint: "main",
+    //     },
+    // });
 
     this.computeInitialRaysBGLayout = device.createBindGroupLayout({
         entries: [
@@ -358,6 +365,56 @@ var VolumeRaycaster = function(device, canvas) {
             },
         ]
     };
+
+    this.depthCompositeBGLayout = device.createBindGroupLayout({
+        entries: [
+            {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
+            {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+            {binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+            {
+                binding: 3,
+                visibility: GPUShaderStage.COMPUTE,
+                storageTexture: {access: "write-only", format: renderTargetFormat}
+            },       
+            {binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}}, 
+        ]
+    });
+
+    this.depthCompositePipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout({
+            bindGroupLayouts: [
+                this.depthCompositeBGLayout,
+            ],
+        }),
+        compute: {
+            module: device.createShaderModule({
+                code: depth_composite_comp_spv,
+            }),
+            entryPoint: "main",
+        },
+    });
+
+    this.resetSpeculativeIDsBGLayout = device.createBindGroupLayout({
+        entries: [
+            {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
+            {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+            {binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+        ]
+    });
+
+    this.resetSpeculativeIDsPipeline = device.createComputePipeline({
+        layout: device.createPipelineLayout({
+            bindGroupLayouts: [
+                this.resetSpeculativeIDsBGLayout,
+            ],
+        }),
+        compute: {
+            module: device.createShaderModule({
+                code: reset_speculative_ids_comp_spv,
+            }),
+            entryPoint: "main",
+        },
+    });
 
     this.macroTraverseBGLayout = device.createBindGroupLayout({
         entries: [
@@ -542,6 +599,10 @@ var VolumeRaycaster = function(device, canvas) {
         size: this.radixSorter.getAlignedSize(this.canvas.width * this.canvas.height) * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
+    this.compactSpeculativeIDBuffer = device.createBuffer({
+        size: this.radixSorter.getAlignedSize(this.canvas.width * this.canvas.height) * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+    });
     this.rayBlockIDBuffer = device.createBuffer({
         size: this.radixSorter.getAlignedSize(this.canvas.width * this.canvas.height) * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
@@ -557,6 +618,10 @@ var VolumeRaycaster = function(device, canvas) {
     });
 
     this.rayActiveCompactOffsetBuffer = device.createBuffer({
+        size: this.scanPipeline.getAlignedSize(this.canvas.width * this.canvas.height) * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
+    });
+    this.speculativeRayOffsetBuffer = device.createBuffer({
         size: this.scanPipeline.getAlignedSize(this.canvas.width * this.canvas.height) * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
@@ -721,7 +786,14 @@ var VolumeRaycaster = function(device, canvas) {
                 buffer: {
                     type: "storage",
                 }
-            }
+            },
+            {
+                binding: 7,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
+            },
         ]
     });
 
@@ -865,8 +937,30 @@ VolumeRaycaster.prototype.setCompressedVolume =
         entries: [
             {binding: 0, resource: {buffer: this.volumeInfoBuffer}},
             {binding: 1, resource: {buffer: this.speculativeRayIDBuffer}},
+            {binding: 2, resource: {buffer: this.rayRGBZBuffer}},
         ]
     });
+
+    this.depthCompositeBG = this.device.createBindGroup({
+        layout: this.depthCompositeBGLayout,
+        entries: [
+            {binding: 0, resource: {buffer: this.viewParamBuf}},
+            {binding: 1, resource: {buffer: this.speculativeRayIDBuffer}},
+            {binding: 2, resource: {buffer: this.rayRGBZBuffer}},
+            {binding: 3, resource: this.renderTarget.createView()},
+            {binding: 4, resource: {buffer: this.volumeInfoBuffer}},
+        ]
+    });
+
+    // this.initSpeculativeIDsBG = this.device.createBindGroup({
+    //     layout: this.initSpeculativeIDsBGLayout,
+    //     entries: [
+    //         {binding: 0, resource: {buffer: this.volumeInfoBuffer}},
+    //         {binding: 1, resource: {buffer: this.viewParamBuf}},
+    //         {binding: 2, resource: {buffer: this.speculativeIDBuffer}},
+    //         {binding: 3, resource: {buffer: this.speculativeRayOffsetBuffer}},
+    //     ]
+    // });
 
     this.initialRaysBindGroup = this.device.createBindGroup({
         layout: this.computeInitialRaysBGLayout,
@@ -941,7 +1035,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
             {
                 binding: 7,
                 resource: {
-                    buffer: this.rayActiveCompactOffsetBuffer,
+                    buffer: this.speculativeRayOffsetBuffer,
                 },
             },
             {
@@ -1015,7 +1109,8 @@ VolumeRaycaster.prototype.setCompressedVolume =
             {binding: 3, resource: {buffer: this.combinedBlockInformationBuffer}},
             {binding: 4, resource: this.renderTarget.createView()},
             {binding: 5, resource: {buffer: this.blockRangesBuffer}},
-            {binding: 6, resource: {buffer: this.rayBlockIDBuffer}},
+            {binding: 6, resource: {buffer: this.compactSpeculativeIDBuffer}},
+            {binding: 7, resource: {buffer: this.rayRGBZBuffer}},
         ]
     });
 };
@@ -1254,48 +1349,36 @@ VolumeRaycaster.prototype.renderSurface =
     console.log(`Ray active and offsets: ${end - start}ms`);
     console.log(`numRaysActive = ${numRaysActive}`);
     if (numRaysActive > 0) {
+        // var commandEncoder = this.device.createCommandEncoder();
+
+        // var pass = commandEncoder.beginComputePass();
+        // pass.setPipeline(this.initSpeculativeIDsPipeline);
+        // pass.setBindGroup(0, this.initSpeculativeIDsBG);
+        // pass.dispatch(Math.ceil(this.canvas.width), this.canvas.height, 1);
+        // pass.end();
+
+        // this.device.queue.submit([commandEncoder.finish()]);
+        // await this.device.queue.onSubmittedWorkDone();
+
+        // Log speculative ray IDs buffer
+        // var readbackSpeculativeIDBuffer = this.device.createBuffer({
+        //     size: this.speculativeIDBuffer.size,
+        //     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+        // });
+        // var commandEncoder = this.device.createCommandEncoder();
+        // commandEncoder.copyBufferToBuffer(
+        //     this.speculativeIDBuffer, 0, readbackSpeculativeIDBuffer, 0, this.speculativeIDBuffer.size);
+        // this.device.queue.submit([commandEncoder.finish()]);
+        // await this.device.queue.onSubmittedWorkDone();
+        // await readbackSpeculativeIDBuffer.mapAsync(GPUMapMode.READ);
+        // var specIDs = new Uint32Array(readbackSpeculativeIDBuffer.getMappedRange());
+        // console.log(specIDs);
+
         start = performance.now();
         var numActiveBlocks = await this.sortActiveRaysByBlock(numRaysActive);
         end = performance.now();
         console.log(`Sort active rays by block: ${end - start}ms`);
-
-        // TODO: Uploading speculation count here is incorrect because numRaysActive doesn't
-        // include the rays that terminate in the following raytrace blocks step. This also can lead to 
-        // further problems when we fill the speculatedRayIdBuffer in macro traverse, as the "holes" caused
-        // by the rays with t > FLOAT_MAX could be filled with arbitrary IDs.
-        var commandEncoder = this.device.createCommandEncoder();
-        // var speculationCount = Math.floor(this.canvas.width * this.canvas.height / numRaysActive);
-        var speculationCount = 0;
-        console.log(`Speculation count is ${speculationCount}`);
-        var uploadSpeculationCount = this.device.createBuffer(
-            {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
-        new Uint32Array(uploadSpeculationCount.getMappedRange()).set([speculationCount]);
-        uploadSpeculationCount.unmap();
-        commandEncoder.copyBufferToBuffer(
-            uploadSpeculationCount, 0, this.viewParamBuf, (16 + 8 + 1 + 1) * 4, 4);
-
-        // var pass = commandEncoder.beginComputePass();
-        // pass.setPipeline(this.resetBlockActivePipeline);
-        // pass.setBindGroup(0, this.resetBlockActiveBG);
-        // pass.dispatch(Math.ceil(this.blockGridDims[0] / 8),
-        //                 this.blockGridDims[1],
-        //                 this.blockGridDims[2]);
-        // pass.end();
-        // this.device.queue.submit([commandEncoder.finish()]);    
-        // var readbackCompactOffsetBuffer = this.device.createBuffer({
-        //     size: this.rayActiveCompactOffsetBuffer.size,
-        //     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-        // });
-
-        // var commandEncoder = this.device.createCommandEncoder();
-        // commandEncoder.copyBufferToBuffer(
-        //     this.rayActiveCompactOffsetBuffer, 0, readbackCompactOffsetBuffer, 0, this.rayActiveCompactOffsetBuffer.size);
-        this.device.queue.submit([commandEncoder.finish()]);
-        await this.device.queue.onSubmittedWorkDone();
-
-        // await readbackCompactOffsetBuffer.mapAsync(GPUMapMode.READ);
-        // var rayOffsets = new Uint32Array(readbackCompactOffsetBuffer.getMappedRange());
-        // console.log(rayOffsets);
+        
 
         start = performance.now();
         await this.raytraceVisibleBlocks(numActiveBlocks);
@@ -1306,8 +1389,35 @@ VolumeRaycaster.prototype.renderSurface =
         console.log(`PASS TOOK: ${end - startPass}ms`);
         console.log(`++++++++++`);
 
-        // TODO: Here we could re-count # of rays active and sort out the rays that finished in
-        // this pass
+        var commandEncoder = this.device.createCommandEncoder();
+        var pass = commandEncoder.beginComputePass();
+        pass.setPipeline(this.depthCompositePipeline);
+        pass.setBindGroup(0, this.depthCompositeBG);
+        pass.dispatch(Math.ceil(this.canvas.width), this.canvas.height, 1);
+        pass.end();
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();    
+
+        var commandEncoder = this.device.createCommandEncoder();
+        commandEncoder.copyBufferToBuffer(
+            this.rayActiveCompactOffsetBuffer, 0, this.speculativeRayOffsetBuffer, 0, this.rayActiveCompactOffsetBuffer.size);
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+
+        // TODO: Uploading speculation count here is incorrect because numRaysActive doesn't
+        // include the rays that terminate in the following raytrace blocks step. 
+        var commandEncoder = this.device.createCommandEncoder();
+        // var speculationCount = Math.floor(this.canvas.width * this.canvas.height / numRaysActive);
+        var speculationCount = 0;
+        console.log(`Speculation count is ${speculationCount}`);
+        var uploadSpeculationCount = this.device.createBuffer(
+            {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
+        new Uint32Array(uploadSpeculationCount.getMappedRange()).set([speculationCount]);
+        uploadSpeculationCount.unmap();
+        commandEncoder.copyBufferToBuffer(
+            uploadSpeculationCount, 0, this.viewParamBuf, (16 + 8 + 1 + 1) * 4, 4);
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
     }
     this.totalPassTime += end - startPass;
     this.numPasses += 1;
@@ -1408,7 +1518,7 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     // this.device.queue.submit([commandEncoder.finish()]);
     // await this.device.queue.onSubmittedWorkDone();
     // await readbackSpeculativeIDBuffer.mapAsync(GPUMapMode.READ);
-    // var specIDs = new Int32Array(readbackSpeculativeIDBuffer.getMappedRange());
+    // var specIDs = new Uint32Array(readbackSpeculativeIDBuffer.getMappedRange());
     // console.log(specIDs);
 
     uploadPassIndex.destroy();
@@ -1537,6 +1647,11 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
                                               this.speculativeRayIDBuffer,
                                               this.rayIDBuffer);
 
+    await this.streamCompact.compactActiveIDs(this.canvas.width * this.canvas.height,
+                                                this.rayActiveBuffer,
+                                                this.rayActiveCompactOffsetBuffer,
+                                                this.compactSpeculativeIDBuffer);
+
     await this.streamCompact.compactActive(this.canvas.width * this.canvas.height,
                                            this.rayActiveBuffer,
                                            this.rayActiveCompactOffsetBuffer,
@@ -1554,10 +1669,22 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     this.compactTimes.push(endCompacts - startCompacts);
     this.compactTimeSum += (endCompacts - startCompacts);
 
+    var compactRayBlockIDBufferCopy = this.device.createBuffer({
+        size: this.compactRayBlockIDBuffer.size,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+    });
+    var commandEncoder = this.device.createCommandEncoder();
+    commandEncoder.copyBufferToBuffer(
+        this.compactRayBlockIDBuffer, 0, compactRayBlockIDBufferCopy, 0, this.compactRayBlockIDBuffer.size);
+    this.device.queue.submit([commandEncoder.finish()]);
+    await this.device.queue.onSubmittedWorkDone();
+
     var start = performance.now();
     // Sort active ray IDs by their block ID
     await this.radixSorter.sort(
         this.compactRayBlockIDBuffer, this.rayIDBuffer, numRaysActive, false);
+    await this.radixSorter.sort(
+        compactRayBlockIDBufferCopy, this.compactSpeculativeIDBuffer, numRaysActive, false);
     var end = performance.now();
     console.log(`sortActiveRaysByBlock: Sort rays by blocks: ${end - start}ms`);
 

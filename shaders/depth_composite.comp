@@ -1,0 +1,52 @@
+#version 450 core
+
+#include "util.glsl"
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std140) uniform ViewParams
+{
+    mat4 proj_view;
+    vec4 eye_pos;
+    vec4 eye_dir;
+    float near_plane;
+    uint current_pass_index;
+    uint speculation_count;
+};
+
+layout(set = 0, binding = 1, std430) buffer RayIDs
+{
+    uint ray_ids[];
+};
+
+layout(set = 0, binding = 2, std140) buffer RayRGBZ
+{
+    vec4 ray_rgbz[];
+};
+
+uniform layout(set = 0, binding = 3, rgba8) writeonly image2D render_target;
+
+layout(set = 0, binding = 4, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+    uint max_bits;
+    float isovalue;
+    uint image_width;
+};
+
+void main(void)
+{
+    uint ray_index;
+    if (speculation_count > 0) {
+        ray_index = ray_ids[(gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width) * speculation_count];
+    } else {
+        ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
+    }
+    ivec2 pixel_coords = ivec2(ray_index % image_width, ray_index / image_width);
+    vec4 color = ray_rgbz[gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width];
+    if (color.w != FLT_MAX) {
+        imageStore(render_target, pixel_coords, vec4(color.r, color.g, color.b, 1));
+    }
+}

@@ -80,6 +80,13 @@ void main() {
     uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
 
     if (rays[ray_index].t == FLT_MAX) {
+        if (speculation_count > 0) {
+            for (uint i = 0; i < speculation_count; i++) {
+                block_ids[ray_offsets[ray_index] * speculation_count + i] = UINT_MAX;
+            }
+        } else {
+            block_ids[ray_index] = UINT_MAX;
+        }        
         return;
     }
 
@@ -91,6 +98,7 @@ void main() {
         }
     } else {
         ray_ids[ray_index] = ray_index;
+        ray_offsets[ray_index] = ray_index;
     }
 
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
@@ -210,6 +218,6 @@ void main() {
 
     rays[ray_index].t = FLT_MAX;
     // Rays that exit the macrocell grid write the background color
-    imageStore(render_target, ivec2(gl_GlobalInvocationID.xy), vec4(1));
+    // imageStore(render_target, ivec2(gl_GlobalInvocationID.xy), vec4(1));
 }
 
