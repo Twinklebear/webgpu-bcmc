@@ -42,7 +42,7 @@ layout(set = 0, binding = 5, std430) buffer GridIterState
 
 layout(set = 0, binding = 6, std430) buffer RayIDs
 {
-    int ray_ids[];
+    uint ray_ids[];
 };
 
 layout(set = 0, binding = 7, std430) buffer RayOffsets
@@ -83,14 +83,14 @@ void main() {
         return;
     }
 
-    // Fill speculated ray ID buffer, use '-1' as a hole filler for extra space at the end and rays
+    // Fill speculated ray ID buffer, use 'UINT_MAX' as a hole filler for extra space at the end and rays
     // terminated by last raytrace active blocks
     if (speculation_count > 0) {
         for (int i = 0; i < speculation_count; i++) {
-            ray_ids[ray_offsets[ray_index] * speculation_count + i] = int(ray_index);
+            ray_ids[ray_offsets[ray_index] * speculation_count + i] = ray_index;
         }
     } else {
-        ray_ids[ray_index] = int(ray_index);
+        ray_ids[ray_index] = ray_index;
     }
 
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
