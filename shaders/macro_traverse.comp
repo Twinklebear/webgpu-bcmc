@@ -181,11 +181,6 @@ void main() {
                 } else {
                     block_ids[ray_index] = block_index;
                 }
-
-                // This is never actually used !
-                // rays[ray_index].t = cell_t_range.x;
-                // rays[ray_index].t_next = cell_t_range.y;
-
                 
                 // Note: grid dims is redundant and an easy one to not store
                 iterator_state[ray_index * 2].cell = coarse_grid_iter.cell;
@@ -217,7 +212,5 @@ void main() {
     }
 
     rays[ray_index].t = FLT_MAX;
-    // Rays that exit the macrocell grid write the background color
-    // imageStore(render_target, ivec2(gl_GlobalInvocationID.xy), vec4(1));
 }
 

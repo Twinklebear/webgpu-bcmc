@@ -628,6 +628,9 @@ var VolumeRaycaster = function(device, canvas) {
     this.scanRayActive = this.scanPipeline.prepareGPUInput(
         this.rayActiveCompactOffsetBuffer,
         this.scanPipeline.getAlignedSize(this.canvas.width * this.canvas.height));
+    this.scanRayAfterActive = this.scanPipeline.prepareGPUInput(
+        this.speculativeRayOffsetBuffer,
+        this.scanPipeline.getAlignedSize(this.canvas.width * this.canvas.height));
 
     this.writeRayAndBlockIDBGLayout = device.createBindGroupLayout({
         entries: [
@@ -659,6 +662,40 @@ var VolumeRaycaster = function(device, canvas) {
             device.createPipelineLayout({bindGroupLayouts: [this.writeRayAndBlockIDBGLayout]}),
         compute: {
             module: device.createShaderModule({code: write_ray_and_block_id_comp_spv}),
+            entryPoint: "main",
+        }
+    });
+
+    this.markRayActiveBGLayout = device.createBindGroupLayout({
+        entries: [
+            {
+                binding: 0,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "uniform",
+                }
+            },
+            {
+                binding: 1,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
+            },
+            {
+                binding: 2,
+                visibility: GPUShaderStage.COMPUTE,
+                buffer: {
+                    type: "storage",
+                }
+            },
+        ],
+    });
+    this.markRayActivePipeline = device.createComputePipeline({
+        layout:
+            device.createPipelineLayout({bindGroupLayouts: [this.markRayActiveBGLayout]}),
+        compute: {
+            module: device.createShaderModule({code: mark_ray_active_comp_spv}),
             entryPoint: "main",
         }
     });
@@ -1086,6 +1123,15 @@ VolumeRaycaster.prototype.setCompressedVolume =
         ]
     });
 
+    this.markRayActiveBG = this.device.createBindGroup({
+        layout: this.markRayActiveBGLayout,
+        entries: [
+            {binding: 0, resource: {buffer: this.volumeInfoBuffer}},
+            {binding: 1, resource: {buffer: this.rayInformationBuffer}},
+            {binding: 2, resource: {buffer: this.rayActiveBuffer}},
+        ]
+    });
+
     this.combinedBlockInformationBuffer = this.device.createBuffer(
         {size: this.totalBlocks * 4 * 4, usage: GPUBufferUsage.STORAGE});
 
@@ -1294,6 +1340,7 @@ VolumeRaycaster.prototype.renderSurface =
 
         this.totalPassTime = 0;
         this.numPasses = 0;
+        this.speculationCount = 0;
     }
     // for (var i = 0; i < 50; ++i) {
     console.log(`++++ Surface pass ${this.numPasses} ++++`);
@@ -1393,26 +1440,41 @@ VolumeRaycaster.prototype.renderSurface =
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.depthCompositePipeline);
         pass.setBindGroup(0, this.depthCompositeBG);
-        pass.dispatch(Math.ceil(this.canvas.width), this.canvas.height, 1);
+        if (this.speculationCount == 0) {
+            pass.dispatch(this.canvas.width, Math.floor(this.canvas.height), 1);
+        } else {
+            pass.dispatch(this.canvas.width, Math.ceil(this.canvas.height / this.speculationCount), 1);
+        }
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();    
 
         var commandEncoder = this.device.createCommandEncoder();
+        var pass = commandEncoder.beginComputePass();
+        pass.setPipeline(this.markRayActivePipeline);
+        pass.setBindGroup(0, this.markRayActiveBG);
+        pass.dispatch(Math.ceil(this.canvas.width), this.canvas.height, 1);
+        pass.end();
+        // We scan the speculativeRayOffsetBuffer, so copy the ray active information over
         commandEncoder.copyBufferToBuffer(
-            this.rayActiveCompactOffsetBuffer, 0, this.speculativeRayOffsetBuffer, 0, this.rayActiveCompactOffsetBuffer.size);
+            this.rayActiveBuffer,
+            0,
+            this.speculativeRayOffsetBuffer,
+            0,
+            this.canvas.width * this.canvas.height * 4
+        );
         this.device.queue.submit([commandEncoder.finish()]);
-        await this.device.queue.onSubmittedWorkDone();
 
-        // TODO: Uploading speculation count here is incorrect because numRaysActive doesn't
-        // include the rays that terminate in the following raytrace blocks step. 
+        var nactive = await this.scanRayAfterActive.scan(this.canvas.width * this.canvas.height);
+        console.log(`num rays active after raytracing: ${nactive}`);
+
         var commandEncoder = this.device.createCommandEncoder();
-        // var speculationCount = Math.floor(this.canvas.width * this.canvas.height / numRaysActive);
-        var speculationCount = 0;
-        console.log(`Speculation count is ${speculationCount}`);
+        this.speculationCount = Math.floor(this.canvas.width * this.canvas.height / nactive);
+        // var speculationCount = 0;
+        console.log(`Speculation count is ${this.speculationCount}`);
         var uploadSpeculationCount = this.device.createBuffer(
             {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
-        new Uint32Array(uploadSpeculationCount.getMappedRange()).set([speculationCount]);
+        new Uint32Array(uploadSpeculationCount.getMappedRange()).set([this.speculationCount]);
         uploadSpeculationCount.unmap();
         commandEncoder.copyBufferToBuffer(
             uploadSpeculationCount, 0, this.viewParamBuf, (16 + 8 + 1 + 1) * 4, 4);
@@ -1422,7 +1484,7 @@ VolumeRaycaster.prototype.renderSurface =
     this.totalPassTime += end - startPass;
     this.numPasses += 1;
     //}
-    this.renderComplete = numRaysActive == 0;
+    this.renderComplete = nactive == 0;
     if (this.renderComplete) {
         console.log(`Avg time per pass ${this.totalPassTime / this.numPasses}ms`);
         // console.log(`Avg compact time per pass ${this.compactTimeSum /
