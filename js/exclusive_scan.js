@@ -248,15 +248,15 @@ ExclusiveScanner.prototype.scan = async function(dataSize) {
 
         computePass.setPipeline(this.scanPipeline.scanBlocksPipeline);
         computePass.setBindGroup(0, scanBlockBG);
-        computePass.dispatch(nWorkGroups, 1, 1);
+        computePass.dispatchWorkgroups(nWorkGroups, 1, 1);
 
         computePass.setPipeline(this.scanPipeline.scanBlockResultsPipeline);
         computePass.setBindGroup(0, this.scanBlockResultsBindGroup);
-        computePass.dispatch(1, 1, 1);
+        computePass.dispatchWorkgroups(1, 1, 1);
 
         computePass.setPipeline(this.scanPipeline.addBlockSumsPipeline);
         computePass.setBindGroup(0, scanBlockBG);
-        computePass.dispatch(nWorkGroups, 1, 1);
+        computePass.dispatchWorkgroups(nWorkGroups, 1, 1);
 
         computePass.end();
 
