@@ -14,13 +14,19 @@ layout(set = 2, binding = 0) uniform NumNewItemIDs
     uint num_new_items;
 };
 
+layout(set = 3, binding = 0, std140) uniform WorkItemOffset
+{
+    uint work_item_offset;
+};
+
 void main(void)
 {
-    if (gl_GlobalInvocationID.x >= num_new_items) {
+    const uint work_item_id = work_item_offset * 32 + gl_GlobalInvocationID.x;
+    if (work_item_id >= num_new_items) {
         return;
     }
-    const uint item = new_items[gl_GlobalInvocationID.x];
-    const uint slot = slot_available_id[gl_GlobalInvocationID.x];
+    const uint item = new_items[work_item_id];
+    const uint slot = slot_available_id[work_item_id];
     const int prev = slot_data[slot].item_id;
     // Evict the previous item, if there was one in this slot
     if (prev != -1) {

@@ -9,11 +9,19 @@ layout(set = 1, binding = 0, std140) uniform OldSize
     uint old_size;
 };
 
+layout(set = 2, binding = 0, std140) uniform WorkItemOffset
+{
+    uint work_item_offset;
+    uint total_work_groups;
+    uint cache_size;
+};
+
 void main(void)
 {
+    // TODO: need to check against cache size
     // Initialize each new empty slot
-    slot_data[old_size + gl_GlobalInvocationID.x].age = 100000;
-    slot_data[old_size + gl_GlobalInvocationID.x].available = 1;
-    slot_data[old_size + gl_GlobalInvocationID.x].item_id = -1;
+    slot_data[old_size + work_item_offset * 32 + gl_GlobalInvocationID.x].age = 100000;
+    slot_data[old_size + work_item_offset * 32 + gl_GlobalInvocationID.x].available = 1;
+    slot_data[old_size + work_item_offset * 32 + gl_GlobalInvocationID.x].item_id = -1;
 }
 

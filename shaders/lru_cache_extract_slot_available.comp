@@ -9,8 +9,20 @@ layout(set = 1, binding = 0, std430) buffer Output
     uint out_buf[];
 };
 
+
+layout(set = 2, binding = 0, std140) uniform WorkItemOffset
+{
+    uint work_item_offset;
+    uint total_work_groups;
+    uint cache_size;
+};
+
 void main(void)
 {
-    out_buf[gl_GlobalInvocationID.x] = slot_data[gl_GlobalInvocationID.x].available;
+    const uint work_item_id = work_item_offset * 32 + gl_GlobalInvocationID.x;
+    if (work_item_id >= cache_size) {
+        return;
+    }
+    out_buf[work_item_id] = slot_data[work_item_id].available;
 }
 

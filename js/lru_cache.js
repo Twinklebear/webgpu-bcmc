@@ -234,7 +234,11 @@ var LRUCache = function(
 
     this.cacheInitPipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts: [this.lruCacheBGLayout, this.singleUniformBGLayout],
+            bindGroupLayouts: [
+                this.lruCacheBGLayout,
+                this.singleUniformBGLayout,
+                this.pushConstantsBGLayout
+            ],
         }),
         compute: {
             module: device.createShaderModule({code: lru_cache_init_comp_spv}),
@@ -244,9 +248,13 @@ var LRUCache = function(
 
     this.cacheUpdatePipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            // The last BG layout passes the number of new items
-            bindGroupLayouts:
-                [this.lruCacheBGLayout, this.cacheUpdateBGLayout, this.singleUniformBGLayout],
+            bindGroupLayouts: [
+                this.lruCacheBGLayout,
+                this.cacheUpdateBGLayout,
+                // Passes the number of new items
+                this.singleUniformBGLayout,
+                this.pushConstantsBGLayout
+            ],
         }),
         compute: {
             module: device.createShaderModule({code: lru_cache_update_comp_spv}),
@@ -256,8 +264,12 @@ var LRUCache = function(
 
     this.copyAvailableSlotAgePipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts:
-                [this.lruCacheBGLayout, this.cacheUpdateBGLayout, this.singleUniformBGLayout],
+            bindGroupLayouts: [
+                this.lruCacheBGLayout,
+                this.cacheUpdateBGLayout,
+                this.singleUniformBGLayout,
+                this.pushConstantsBGLayout
+            ],
         }),
         compute: {
             module: device.createShaderModule({
@@ -289,7 +301,8 @@ var LRUCache = function(
 
     this.extractSlotAvailablePipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts: [this.lruCacheBGLayout, this.cacheUpdateBGLayout],
+            bindGroupLayouts:
+                [this.lruCacheBGLayout, this.cacheUpdateBGLayout, this.pushConstantsBGLayout],
         }),
         compute: {
             module: device.createShaderModule({
@@ -372,8 +385,9 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     // Age all slots in the cache
     pass.setPipeline(this.ageCacheSlotsPipeline);
     pass.setBindGroup(0, this.lruCacheBG);
-    // TODO: Probably should be chunked to handle very large volumes again
-    pass.dispatch(this.cacheSize / 32, 1, 1);
+    // TODO: Must be chunked to work with Miranda again
+    console.log(`dispatch ${this.cacheSize / 32}`);
+    pass.dispatchWorkgroups(this.cacheSize / 32, 1, 1);
 
     {
         var totalWorkGroups = this.alignedTotalElements / 32;
@@ -394,7 +408,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         pass.setBindGroup(1, markNewItemsBG);
         for (var i = 0; i < pushConstants.nOffsets; ++i) {
             pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
-            pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
         }
     }
 
@@ -402,7 +416,9 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     // copyBufferToBuffer, since it's stored AoS to reduce our buffer use
     pass.setPipeline(this.extractSlotAvailablePipeline);
     pass.setBindGroup(1, this.outputSlotAvailableBG);
-    pass.dispatch(this.cacheSize / 32, 1, 1);
+    console.log(`dispatch ${this.cacheSize / 32}`);
+    // TODO: Must be chunked to work with Miranda, and because it expects chunk data
+    pass.dispatchWorkgroups(this.cacheSize / 32, 1, 1);
 
     pass.end();
     commandEncoder.copyBufferToBuffer(
@@ -466,7 +482,8 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     var start = performance.now();
     var numSlotsAvailable = await this.slotAvailableScanner.scan(this.cacheSize);
     var end = performance.now();
-    // console.log(`Scan slots available took ${end - start}ms`);
+    console.log(
+        `Scan slots available took ${end - start}ms, # of slots = ${numSlotsAvailable}`);
     perfTracker.lruScanSlotsAvailable.push(end - start);
     perfTracker.lruNumSlotsAvailable.push(numSlotsAvailable);
 
@@ -545,13 +562,25 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         var commandEncoder = this.device.createCommandEncoder();
 
         // Initialize the new parts of the buffers
-        var pass = commandEncoder.beginComputePass();
-        pass.setPipeline(this.cacheInitPipeline);
-        pass.setBindGroup(0, this.lruCacheBG);
-        pass.setBindGroup(1, this.cacheInitBG);
-        // Probably needs to chunk for very large volumes
-        pass.dispatch((newSize - this.cacheSize) / 32, 1, 1);
-        pass.end();
+        {
+            var pushConstants =
+                buildPushConstantsBuffer(this.device, (newSize - this.cacheSize) / 32);
+            var pushConstantsBG = this.device.createBindGroup({
+                layout: this.pushConstantsBGLayout,
+                entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+            });
+
+            var pass = commandEncoder.beginComputePass();
+            pass.setPipeline(this.cacheInitPipeline);
+            pass.setBindGroup(0, this.lruCacheBG);
+            pass.setBindGroup(1, this.cacheInitBG);
+            for (var i = 0; i < pushConstants.nOffsets; ++i) {
+                pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+                console.log(`dispatch init pipeline ${pushConstants.dispatchSizes[i]}`);
+                pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
+            }
+            pass.end();
+        }
 
         // Copy in the old contents of the buffers to the new ones
         commandEncoder.copyBufferToBuffer(
@@ -587,14 +616,27 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
 
         var commandEncoder = this.device.createCommandEncoder();
 
-        var pass = commandEncoder.beginComputePass()
-        // We need a kernel to copy the slotAvailable member out of the structs instead of
-        // using copyBufferToBuffer, since it's stored AoS to reduce our buffer use
-        pass.setPipeline(this.extractSlotAvailablePipeline);
-        pass.setBindGroup(0, this.lruCacheBG);
-        pass.setBindGroup(1, this.outputSlotAvailableBG);
-        pass.dispatch(newSize / 32, 1, 1);
-        pass.end();
+        {
+            var pushConstants = buildPushConstantsBuffer(
+                this.device, newSize / 32, new Uint32Array([newSize]));
+            var pushConstantsBG = this.device.createBindGroup({
+                layout: this.pushConstantsBGLayout,
+                entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 12}}]
+            });
+
+            var pass = commandEncoder.beginComputePass()
+            // We need a kernel to copy the slotAvailable member out of the structs instead of
+            // using copyBufferToBuffer, since it's stored AoS to reduce our buffer use
+            pass.setPipeline(this.extractSlotAvailablePipeline);
+            pass.setBindGroup(0, this.lruCacheBG);
+            pass.setBindGroup(1, this.outputSlotAvailableBG);
+            for (var i = 0; i < pushConstants.nOffsets; ++i) {
+                pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+                console.log(`dispatch extract slot avail ${pushConstants.dispatchSizes[i]}`);
+                pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
+            }
+            pass.end();
+        }
 
         this.device.queue.submit([commandEncoder.finish()]);
 
@@ -626,13 +668,25 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     // for use by stream compact. Not as great for perf, but a bit lazy here ideally we can
     // undo this buffer use reduction once the limits API is added.
     var commandEncoder = this.device.createCommandEncoder();
-    var pass = commandEncoder.beginComputePass()
-    pass.setPipeline(this.extractSlotAvailablePipeline);
-    pass.setBindGroup(0, this.lruCacheBG);
-    pass.setBindGroup(1, this.outputSlotAvailableForCompact);
-    // Probably needs to chunk for very large volumes
-    pass.dispatch(this.cacheSize / 32, 1, 1);
-    pass.end();
+    {
+        var pushConstants = buildPushConstantsBuffer(
+            this.device, this.cacheSize / 32, new Uint32Array([this.cacheSize]));
+        var pushConstantsBG = this.device.createBindGroup({
+            layout: this.pushConstantsBGLayout,
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 12}}]
+        });
+
+        var pass = commandEncoder.beginComputePass()
+        pass.setPipeline(this.extractSlotAvailablePipeline);
+        pass.setBindGroup(0, this.lruCacheBG);
+        pass.setBindGroup(1, this.outputSlotAvailableForCompact);
+        for (var i = 0; i < pushConstants.nOffsets; ++i) {
+            pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+            console.log(`dispatch extract pipeline ${pushConstants.dispatchSizes[i]}`);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
+        }
+        pass.end();
+    }
     this.device.queue.submit([commandEncoder.finish()]);
     // I don't think we need an await here since it's all on the same queue
     // await this.device.queue.onSubmittedWorkDone();
@@ -691,24 +745,40 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(
         this.slotAvailableIDs, 0, sortedIDs, 0, numSlotsAvailable * 4);
+
     // Run pass to copy the slot ages over
-    var pass = commandEncoder.beginComputePass();
-    pass.setPipeline(this.copyAvailableSlotAgePipeline);
-    pass.setBindGroup(0, this.lruCacheBG);
-    pass.setBindGroup(1, outputAgeBG);
-    pass.setBindGroup(2, outputAgeBGSize);
-    pass.dispatch(Math.ceil(numSlotsAvailable / 32), 1, 1);
-    pass.end();
+    {
+        console.log(`num slots avail ${numSlotsAvailable}`);
+        var pushConstants =
+            buildPushConstantsBuffer(this.device, Math.ceil(numSlotsAvailable / 32));
+        var pushConstantsBG = this.device.createBindGroup({
+            layout: this.pushConstantsBGLayout,
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+        });
+
+        var pass = commandEncoder.beginComputePass();
+        pass.setPipeline(this.copyAvailableSlotAgePipeline);
+        pass.setBindGroup(0, this.lruCacheBG);
+        pass.setBindGroup(1, outputAgeBG);
+        pass.setBindGroup(2, outputAgeBGSize);
+        for (var i = 0; i < pushConstants.nOffsets; ++i) {
+            pass.setBindGroup(3, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+            console.log(`dispatch copy avail slot age ${pushConstants.dispatchSizes[i]}`);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
+        }
+        pass.end();
+    }
+
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
     var end = performance.now();
-    // console.log(`Prep key/value pairs for sort: ${end - start}ms`);
+    console.log(`Prep key/value pairs for sort: ${end - start}ms`);
     perfTracker.lruPrepKeyValue.push(end - start);
 
     var start = performance.now();
     await this.sorter.sort(slotKeys, sortedIDs, numSlotsAvailable, true);
     var end = performance.now();
-    // console.log(`Sorting ${numSlotsAvailable} ages/slots took ${end - start}ms`);
+    console.log(`Sorting ${numSlotsAvailable} ages/slots took ${end - start}ms`);
     perfTracker.lruTotalSortTime.push(end - start);
 
     // Update the bindgroup
@@ -771,18 +841,29 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     var start = performance.now();
     // Update the slot item IDs with the new items which will be stored in the cache
     var commandEncoder = this.device.createCommandEncoder();
-    var pass = commandEncoder.beginComputePass();
-    pass.setPipeline(this.cacheUpdatePipeline);
-    pass.setBindGroup(0, sortedSlotsBG);
-    pass.setBindGroup(1, cacheUpdateBG);
-    pass.setBindGroup(2, numNewItemsBG);
-    // TODO: Probably needs to chunk for large volumes
-    pass.dispatch(Math.ceil(numNewItems / 32), 1, 1);
-    pass.end();
+    {
+        var pushConstants = buildPushConstantsBuffer(this.device, Math.ceil(numNewItems / 32));
+        var pushConstantsBG = this.device.createBindGroup({
+            layout: this.pushConstantsBGLayout,
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+        });
+
+        var pass = commandEncoder.beginComputePass();
+        pass.setPipeline(this.cacheUpdatePipeline);
+        pass.setBindGroup(0, sortedSlotsBG);
+        pass.setBindGroup(1, cacheUpdateBG);
+        pass.setBindGroup(2, numNewItemsBG);
+        for (var i = 0; i < pushConstants.nOffsets; ++i) {
+            pass.setBindGroup(3, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+            console.log(`dispatch cache update ${pushConstants.dispatchSizes[i]}`);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
+        }
+        pass.end();
+    }
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
     var end = performance.now();
-    // console.log(`Writing new item slots took ${end - start}ms`);
+    console.log(`Writing new item slots took ${end - start}ms`);
     perfTracker.lruWriteNewItems.push(end - start);
 
     slotKeys.destroy();
@@ -808,12 +889,25 @@ LRUCache.prototype.reset = async function() {
 
     var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(uploadBuf, 0, this.cacheSizeBuf, 0, 4);
-    var pass = commandEncoder.beginComputePass();
-    pass.setPipeline(this.cacheInitPipeline);
-    pass.setBindGroup(0, this.lruCacheBG);
-    pass.setBindGroup(1, this.cacheInitBG);
-    pass.dispatch(this.cacheSize / 32, 1, 1);
-    pass.end();
+
+    {
+        var pushConstants = buildPushConstantsBuffer(this.device, this.cacheSize / 32);
+        var pushConstantsBG = this.device.createBindGroup({
+            layout: this.pushConstantsBGLayout,
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+        });
+
+        var pass = commandEncoder.beginComputePass();
+        pass.setPipeline(this.cacheInitPipeline);
+        pass.setBindGroup(0, this.lruCacheBG);
+        pass.setBindGroup(1, this.cacheInitBG);
+        for (var i = 0; i < pushConstants.nOffsets; ++i) {
+            pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+            console.log(`dispatch init pipeline ${pushConstants.dispatchSizes[i]}`);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
+        }
+        pass.end();
+    }
 
     // Also need to clear the cached item slots array, just copy the slot item
     // ID array over it, which is also filled with -1
