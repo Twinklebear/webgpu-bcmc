@@ -320,7 +320,6 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
         pass.setBindGroup(1, radixSortBG);
         for (var i = 0; i < pushConstants.nOffsets; ++i) {
             pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
-            console.log(`dispatch sortPipeline size = ${pushConstants.dispatchSizes[i]}`);
             pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
         }
         pass.end();
@@ -344,7 +343,6 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
                 },
             ],
         });
-        console.log(`mergePipeline dispatch total = ${chunkCount / (2 << i)}`);
         var pushConstants = buildPushConstantsBuffer(this.device, chunkCount / (2 << i));
         var pushConstantsBG = this.device.createBindGroup({
             layout: this.pushConstantsBGLayout,
@@ -356,8 +354,6 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
 
         for (var j = 0; j < pushConstants.nOffsets; ++j) {
             pass.setBindGroup(3, pushConstantsBG, pushConstants.dynamicOffsets, j, 1);
-            console.log(
-                `dispatch mergePipeline chunk of size = ${pushConstants.dispatchSizes[j]}`);
             pass.dispatchWorkgroups(pushConstants.dispatchSizes[j], 1, 1);
         }
     }
@@ -378,7 +374,6 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
         pass.setBindGroup(1, reverseBG);
         for (var i = 0; i < pushConstants.nOffsets; ++i) {
             pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
-            console.log(`dispatch reverse size = ${pushConstants.dispatchSizes[i]}`);
             pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
         }
         pass.end();

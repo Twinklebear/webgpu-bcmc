@@ -72,7 +72,6 @@
     var start = performance.now();
     var totalVerts = await compressedMC.computeSurface(currentIsovalue, {});
     var end = performance.now();
-    console.log(`total vertices ${totalVerts} in ${end - start}ms`);
 
     var displayMCInfo = function() {
         mcInfo.innerHTML = `Extracted surface with ${
@@ -372,6 +371,7 @@
             numFrames = 0;
             totalTimeMS = 0;
 
+            /*
             console.log(JSON.stringify(perfResults));
             for (const prop in perfResults) {
                 var sum = perfResults[prop].reduce(function(acc, x) {
@@ -380,6 +380,7 @@
                 console.log(
                     `${prop} average = ${(sum / perfResults[prop].length).toFixed(3)}`);
             }
+            */
         }
 
         renderPassDesc.colorAttachments[0].view = context.getCurrentTexture().createView();

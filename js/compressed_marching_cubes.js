@@ -578,11 +578,11 @@ CompressedMarchingCubes.prototype.computeBlockRanges = async function() {
 };
 
 CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perfTracker) {
-    console.log(`=====\nIsovalue = ${isovalue}`);
-    // TODO: Conditionally free if memory use of VBO is very high to make
-    // sure we don't OOM with some of our temp allocations?
-    // This isn't quite enough to get miranda running on the 4GB VRAM surface
-    // Adds about 100ms cost on RTX2070 on miranda
+    // console.log(`=====\nIsovalue = ${isovalue}`);
+    //  TODO: Conditionally free if memory use of VBO is very high to make
+    //  sure we don't OOM with some of our temp allocations?
+    //  This isn't quite enough to get miranda running on the 4GB VRAM surface
+    //  Adds about 100ms cost on RTX2070 on miranda
     /*
       if (this.vertexBuffer) {
           this.vertexBuffer.destroy();
@@ -621,7 +621,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
     var start = performance.now();
     var numActiveBlocks = await this.computeActiveBlocks();
     var end = performance.now();
-    console.log(`Compute active took ${end - start}ms`);
+    // console.log(`Compute active took ${end - start}ms`);
 
     perfTracker.computeActiveBlocks.push(end - start);
     perfTracker.numActiveBlocks.push(numActiveBlocks);
@@ -648,8 +648,8 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
         await this.lruCache.update(this.blockActiveBuffer, perfTracker);
     var end = performance.now();
     this.newDecompressed = nBlocksToDecompress;
-    console.log(`# Blocks to decompress ${nBlocksToDecompress}`);
-    console.log(`Cache update took ${end - start}ms`);
+    // console.log(`# Blocks to decompress ${nBlocksToDecompress}`);
+    // console.log(`Cache update took ${end - start}ms`);
     perfTracker.cacheUpdate.push(end - start);
     perfTracker.numBlocksDecompressed.push(nBlocksToDecompress);
 
@@ -692,7 +692,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
         decompressBlockIDs.destroy();
     }
     var end = performance.now();
-    console.log(`Block decompression took ${end - start}`);
+    // console.log(`Block decompression took ${end - start}`);
     perfTracker.decompression.push(end - start);
 
     // NOTE: we need to keep active block IDs and offsets as well, but as a separate thing
@@ -705,7 +705,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
                                               this.activeBlockOffsets,
                                               this.activeBlockIDs);
     var end = performance.now();
-    console.log(`Compact active block IDs took ${end - start}ms`);
+    // console.log(`Compact active block IDs took ${end - start}ms`);
     perfTracker.compactActiveIDs.push(end - start);
 
     var start = performance.now();
@@ -753,7 +753,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
                                               this.blockHasVertsOffsets,
                                               this.blocksWithVertices);
     var end = performance.now();
-    console.log(`Active blocks w/ verts reduction took ${end - start}ms`);
+    // console.log(`Active blocks w/ verts reduction took ${end - start}ms`);
 
     perfTracker.numBlocksWithVertices.push(numBlocksWithVertices);
     perfTracker.compactBlocksWithVertices.push(end - start);
@@ -763,7 +763,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
     var start = performance.now();
     var numVertices = await this.computeBlockVertexCounts();
     var end = performance.now();
-    console.log(`Vertex count computation took ${end - start}ms`);
+    // console.log(`Vertex count computation took ${end - start}ms`);
     perfTracker.numVertices.push(numVertices);
     if (numVertices == 0) {
         perfTracker.computeVertices.push(0);
@@ -800,7 +800,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
     var start = performance.now();
     await this.computeVertices();
     var end = performance.now();
-    console.log(`Vertex computation took ${end - start}ms`);
+    // console.log(`Vertex computation took ${end - start}ms`);
     perfTracker.computeVertices.push(end - start);
 
     // Compute the vertices and output them to the single compacted buffer
@@ -812,7 +812,8 @@ CompressedMarchingCubes.prototype.computeActiveBlocks = async function() {
     var pass = commandEncoder.beginComputePass();
     pass.setPipeline(this.computeActiveBlocksPipeline);
     pass.setBindGroup(0, this.computeActiveBlocksBG);
-    pass.dispatchWorkgroups(this.paddedDims[0] / 4, this.paddedDims[1] / 4, this.paddedDims[2] / 4);
+    pass.dispatchWorkgroups(
+        this.paddedDims[0] / 4, this.paddedDims[1] / 4, this.paddedDims[2] / 4);
     pass.end();
     commandEncoder.copyBufferToBuffer(
         this.blockActiveBuffer, 0, this.activeBlockOffsets, 0, this.totalBlocks * 4);
@@ -822,7 +823,7 @@ CompressedMarchingCubes.prototype.computeActiveBlocks = async function() {
     var start = performance.now();
     var totalActive = await this.activeBlockScanner.scan(this.totalBlocks);
     var end = performance.now();
-    console.log(`Active block scan took ${end - start}ms`);
+    // console.log(`Active block scan took ${end - start}ms`);
     return totalActive;
 };
 
@@ -902,7 +903,6 @@ CompressedMarchingCubes.prototype.decompressBlocks =
             ],
         });
         pass.setBindGroup(1, decompressBlocksStartOffsetBG);
-        console.log(`dispatch size = ${numWorkGroups}`);
         pass.dispatchWorkgroups(numWorkGroups, 1, 1);
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
@@ -1103,7 +1103,6 @@ CompressedMarchingCubes.prototype.computeVertices = async function() {
         pass.setBindGroup(0, blockInformationBG);
         pass.setBindGroup(1, this.blockVertexOffsetsBG);
         pass.setBindGroup(2, offsetBG);
-        console.log(`dispatch size = ${numWorkGroups}`);
         pass.dispatchWorkgroups(numWorkGroups, 1, 1);
 
         // Now extract the vertices for the blocks
@@ -1111,7 +1110,6 @@ CompressedMarchingCubes.prototype.computeVertices = async function() {
         pass.setBindGroup(0, this.computeBlockVertexInfoBG);
         pass.setBindGroup(1, blockInformationBG);
         pass.setBindGroup(2, vertexBufferBG);
-        console.log(`dispatch size = ${numWorkGroups}`);
         pass.dispatchWorkgroups(numWorkGroups, 1, 1);
 
         pass.end();
