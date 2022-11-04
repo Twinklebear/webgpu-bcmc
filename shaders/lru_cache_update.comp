@@ -9,14 +9,11 @@ layout(set = 1, binding = 0, std430) buffer NewItemIDs
     uint new_items[];
 };
 
-layout(set = 2, binding = 0) uniform NumNewItemIDs
-{
-    uint num_new_items;
-};
-
-layout(set = 3, binding = 0, std140) uniform WorkItemOffset
+layout(set = 2, binding = 0, std140) uniform WorkItemOffset
 {
     uint work_item_offset;
+    uint total_work_groups;
+    uint num_new_items;
 };
 
 void main(void)

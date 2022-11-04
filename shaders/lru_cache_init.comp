@@ -20,8 +20,12 @@ void main(void)
 {
     // TODO: need to check against cache size
     // Initialize each new empty slot
-    slot_data[old_size + work_item_offset * 32 + gl_GlobalInvocationID.x].age = 100000;
-    slot_data[old_size + work_item_offset * 32 + gl_GlobalInvocationID.x].available = 1;
-    slot_data[old_size + work_item_offset * 32 + gl_GlobalInvocationID.x].item_id = -1;
+    const uint item_idx = old_size + work_item_offset * 32 + gl_GlobalInvocationID.x;
+    if (item_idx >= cache_size) {
+        return;
+    }
+    slot_data[item_idx].age = 100000;
+    slot_data[item_idx].available = 1;
+    slot_data[item_idx].item_id = -1;
 }
 

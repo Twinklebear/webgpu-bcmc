@@ -9,23 +9,19 @@ layout(set = 1, binding = 0, std430) buffer AvailableSlotAges
     uint available_slot_ages[];
 };
 
-layout(set = 2, binding = 0) uniform NumNewItemIDs
-{
-    uint num_slots_available;
-};
-
-layout(set = 3, binding = 0, std140) uniform WorkItemOffset
+layout(set = 2, binding = 0, std140) uniform WorkItemOffset
 {
     uint work_item_offset;
+    uint total_work_groups;
+    uint num_slots_available;
 };
 
 void main(void)
 {
-    const uint work_item_id = work_item_offset * 32 + gl_GlobalInvocationID.x;
-    if (work_item_id >= num_slots_available) {
+    const uint item_idx = work_item_offset * 32 + gl_GlobalInvocationID.x;
+    if (item_idx >= num_slots_available) {
         return;
     }
-    available_slot_ages[work_item_offset * 32 + gl_GlobalInvocationID.x] =
-        slot_data[slot_available_id[work_item_offset * 32 + gl_GlobalInvocationID.x]].age;
+    available_slot_ages[item_idx] = slot_data[slot_available_id[item_idx]].age;
 }
 

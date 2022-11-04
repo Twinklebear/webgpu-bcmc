@@ -248,13 +248,8 @@ var LRUCache = function(
 
     this.cacheUpdatePipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts: [
-                this.lruCacheBGLayout,
-                this.cacheUpdateBGLayout,
-                // Passes the number of new items
-                this.singleUniformBGLayout,
-                this.pushConstantsBGLayout
-            ],
+            bindGroupLayouts:
+                [this.lruCacheBGLayout, this.cacheUpdateBGLayout, this.pushConstantsBGLayout],
         }),
         compute: {
             module: device.createShaderModule({code: lru_cache_update_comp_spv}),
@@ -264,12 +259,8 @@ var LRUCache = function(
 
     this.copyAvailableSlotAgePipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts: [
-                this.lruCacheBGLayout,
-                this.cacheUpdateBGLayout,
-                this.singleUniformBGLayout,
-                this.pushConstantsBGLayout
-            ],
+            bindGroupLayouts:
+                [this.lruCacheBGLayout, this.cacheUpdateBGLayout, this.pushConstantsBGLayout],
         }),
         compute: {
             module: device.createShaderModule({
@@ -414,11 +405,25 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
 
     // We need a kernel to copy the slotAvailable member out of the structs instead of using
     // copyBufferToBuffer, since it's stored AoS to reduce our buffer use
-    pass.setPipeline(this.extractSlotAvailablePipeline);
-    pass.setBindGroup(1, this.outputSlotAvailableBG);
-    console.log(`dispatch ${this.cacheSize / 32}`);
-    // TODO: Must be chunked to work with Miranda, and because it expects chunk data
-    pass.dispatchWorkgroups(this.cacheSize / 32, 1, 1);
+    {
+        console.log(`Building push consts for extract slot`);
+        var pushConstants = buildPushConstantsBuffer(
+            this.device, this.cacheSize / 32, new Uint32Array([this.cacheSize]));
+        var pushConstantsBG = this.device.createBindGroup({
+            layout: this.pushConstantsBGLayout,
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 12}}]
+        });
+
+        // We need a kernel to copy the slotAvailable member out of the structs instead of
+        // using copyBufferToBuffer, since it's stored AoS to reduce our buffer use
+        pass.setPipeline(this.extractSlotAvailablePipeline);
+        pass.setBindGroup(1, this.outputSlotAvailableBG);
+        for (var i = 0; i < pushConstants.nOffsets; ++i) {
+            pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+            console.log(`dispatch extract slot avail ${pushConstants.dispatchSizes[i]}`);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
+        }
+    }
 
     pass.end();
     commandEncoder.copyBufferToBuffer(
@@ -563,11 +568,12 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
 
         // Initialize the new parts of the buffers
         {
-            var pushConstants =
-                buildPushConstantsBuffer(this.device, (newSize - this.cacheSize) / 32);
+            console.log(`newsize = ${newSize}`);
+            var pushConstants = buildPushConstantsBuffer(
+                this.device, (newSize - this.cacheSize) / 32, new Uint32Array([newSize]));
             var pushConstantsBG = this.device.createBindGroup({
                 layout: this.pushConstantsBGLayout,
-                entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+                entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 12}}]
             });
 
             var pass = commandEncoder.beginComputePass();
@@ -616,6 +622,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
 
         var commandEncoder = this.device.createCommandEncoder();
 
+        console.log(`new size = ${newSize}`);
         {
             var pushConstants = buildPushConstantsBuffer(
                 this.device, newSize / 32, new Uint32Array([newSize]));
@@ -722,26 +729,6 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         ],
     });
 
-    var numSlotsAvailableBuf = this.device.createBuffer(
-        {size: 4, usage: GPUBufferUsage.UNIFORM, mappedAtCreation: true});
-    {
-        var uploadArray = new Uint32Array(numSlotsAvailableBuf.getMappedRange());
-        uploadArray[0] = numSlotsAvailable;
-        numSlotsAvailableBuf.unmap();
-    }
-
-    var outputAgeBGSize = this.device.createBindGroup({
-        layout: this.singleUniformBGLayout,
-        entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: numSlotsAvailableBuf,
-                },
-            },
-        ],
-    });
-
     var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(
         this.slotAvailableIDs, 0, sortedIDs, 0, numSlotsAvailable * 4);
@@ -749,20 +736,20 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     // Run pass to copy the slot ages over
     {
         console.log(`num slots avail ${numSlotsAvailable}`);
-        var pushConstants =
-            buildPushConstantsBuffer(this.device, Math.ceil(numSlotsAvailable / 32));
+        var pushConstants = buildPushConstantsBuffer(this.device,
+                                                     Math.ceil(numSlotsAvailable / 32),
+                                                     new Uint32Array([numSlotsAvailable]));
         var pushConstantsBG = this.device.createBindGroup({
             layout: this.pushConstantsBGLayout,
-            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 12}}]
         });
 
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.copyAvailableSlotAgePipeline);
         pass.setBindGroup(0, this.lruCacheBG);
         pass.setBindGroup(1, outputAgeBG);
-        pass.setBindGroup(2, outputAgeBGSize);
         for (var i = 0; i < pushConstants.nOffsets; ++i) {
-            pass.setBindGroup(3, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+            pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
             console.log(`dispatch copy avail slot age ${pushConstants.dispatchSizes[i]}`);
             pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
         }
@@ -818,43 +805,23 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         ],
     });
 
-    var numNewItemsBuf = this.device.createBuffer(
-        {size: 4, usage: GPUBufferUsage.UNIFORM, mappedAtCreation: true});
-    {
-        var uploadArray = new Uint32Array(numNewItemsBuf.getMappedRange());
-        uploadArray[0] = numNewItems;
-        numNewItemsBuf.unmap();
-    }
-
-    var numNewItemsBG = this.device.createBindGroup({
-        layout: this.singleUniformBGLayout,
-        entries: [
-            {
-                binding: 0,
-                resource: {
-                    buffer: numNewItemsBuf,
-                },
-            },
-        ],
-    });
-
     var start = performance.now();
     // Update the slot item IDs with the new items which will be stored in the cache
     var commandEncoder = this.device.createCommandEncoder();
     {
-        var pushConstants = buildPushConstantsBuffer(this.device, Math.ceil(numNewItems / 32));
+        var pushConstants = buildPushConstantsBuffer(
+            this.device, Math.ceil(numNewItems / 32), new Uint32Array([numNewItems]));
         var pushConstantsBG = this.device.createBindGroup({
             layout: this.pushConstantsBGLayout,
-            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 12}}]
         });
 
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.cacheUpdatePipeline);
         pass.setBindGroup(0, sortedSlotsBG);
         pass.setBindGroup(1, cacheUpdateBG);
-        pass.setBindGroup(2, numNewItemsBG);
         for (var i = 0; i < pushConstants.nOffsets; ++i) {
-            pass.setBindGroup(3, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+            pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
             console.log(`dispatch cache update ${pushConstants.dispatchSizes[i]}`);
             pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
         }
@@ -891,10 +858,12 @@ LRUCache.prototype.reset = async function() {
     commandEncoder.copyBufferToBuffer(uploadBuf, 0, this.cacheSizeBuf, 0, 4);
 
     {
-        var pushConstants = buildPushConstantsBuffer(this.device, this.cacheSize / 32);
+        console.log(`for init pipeline size = ${this.cacheSize}`);
+        var pushConstants = buildPushConstantsBuffer(
+            this.device, this.cacheSize / 32, new Uint32Array([this.cacheSize]));
         var pushConstantsBG = this.device.createBindGroup({
             layout: this.pushConstantsBGLayout,
-            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 12}}]
         });
 
         var pass = commandEncoder.beginComputePass();
