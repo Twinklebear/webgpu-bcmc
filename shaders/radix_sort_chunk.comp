@@ -12,6 +12,11 @@ layout(set = 1, binding = 1, std430) buffer Values
     uint values[];
 };
 
+layout(set = 2, binding = 0, std140) uniform PushConstants
+{
+    uint work_group_offset;
+};
+
 shared uint key_buf[SORT_CHUNK_SIZE];
 shared uint sorted_key_buf[SORT_CHUNK_SIZE];
 shared uint scratch[SORT_CHUNK_SIZE];
@@ -23,9 +28,10 @@ shared uint sorted_val_buf[SORT_CHUNK_SIZE];
 void main(void)
 {
     // Also use the radix step to pad arrays out with UINT_MAX
-    if (gl_GlobalInvocationID.x < size) {
-        key_buf[gl_LocalInvocationID.x] = keys[gl_GlobalInvocationID.x];
-        val_buf[gl_LocalInvocationID.x] = values[gl_GlobalInvocationID.x];
+    const uint item_idx = work_group_offset * SORT_CHUNK_SIZE + gl_GlobalInvocationID.x;
+    if (item_idx < size) {
+        key_buf[gl_LocalInvocationID.x] = keys[item_idx];
+        val_buf[gl_LocalInvocationID.x] = values[item_idx];
     } else {
         // Pad any missing data with uint max, which will be sorted out to the end
         key_buf[gl_LocalInvocationID.x] = UINT_MAX;
@@ -90,7 +96,7 @@ void main(void)
     barrier();
     
     // Write back the sorted buffer
-    keys[gl_GlobalInvocationID.x] = key_buf[gl_LocalInvocationID.x];
-    values[gl_GlobalInvocationID.x] = val_buf[gl_LocalInvocationID.x];
+    keys[item_idx] = key_buf[gl_LocalInvocationID.x];
+    values[item_idx] = val_buf[gl_LocalInvocationID.x];
 }
 

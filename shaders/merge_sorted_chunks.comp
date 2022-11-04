@@ -27,6 +27,11 @@ layout(set = 2, binding = 0, std140) uniform NumWorkGroups
     uint work_groups_x;
 };
 
+layout(set = 3, binding = 0, std140) uniform PushConstants
+{
+    uint work_group_offset;
+};
+
 uint upper_bound(uint start, uint count, uint element)
 {
     while (count > 0) {
@@ -63,7 +68,7 @@ void main(void)
     const uint merge_chunk_size = merge_output_size / 2;
 
     // Load the first set of elements to merge
-    const uint offs = gl_WorkGroupID.x * merge_output_size;
+    const uint offs = (work_group_offset + gl_WorkGroupID.x) * merge_output_size;
 
     // Each work group merges two chunks, each thread is responsible for
     // two elements in the chunks, which it merges into the sorted output

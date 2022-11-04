@@ -4,9 +4,20 @@
 
 layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
+layout(set = 1, binding = 0, std140) uniform PushConstants
+{
+    uint work_group_offset;
+    uint total_work_groups;
+    uint cache_size;
+};
+
 void main(void)
 {
-    slot_data[gl_GlobalInvocationID.x].age += 1;
+    const uint idx = work_group_offset * 32 + gl_GlobalInvocationID.x;
+    if (idx >= cache_size) {
+        return;
+    }
+    slot_data[idx].age += 1;
 }
 
 

@@ -211,7 +211,7 @@ var LRUCache = function(
 
     this.ageCacheSlotsPipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts: [this.lruCacheBGLayout],
+            bindGroupLayouts: [this.lruCacheBGLayout, this.pushConstantsBGLayout],
         }),
         compute: {
             module: device.createShaderModule({code: lru_cache_age_slots_comp_spv}),
@@ -366,19 +366,35 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(uploadBuf, 0, this.cacheSizeBuf, 0, 4);
 
-    var pass = commandEncoder.beginComputePass();
-
     /*
     console.log(`cacheSize = ${this.cacheSize}, totalElements = ${
         this.totalElements}, aligned total = ${this.alignedTotalElements}`);
         */
 
+    var pass = commandEncoder.beginComputePass();
     // Age all slots in the cache
-    pass.setPipeline(this.ageCacheSlotsPipeline);
-    pass.setBindGroup(0, this.lruCacheBG);
-    // TODO: Must be chunked to work with Miranda again
-    console.log(`dispatch ${this.cacheSize / 32}`);
-    pass.dispatchWorkgroups(this.cacheSize / 32, 1, 1);
+    {
+        var pushConstants = buildPushConstantsBuffer(
+            this.device, this.cacheSize / 32, new Uint32Array([this.cacheSize]));
+        var pushConstantsBG = this.device.createBindGroup({
+            layout: this.pushConstantsBGLayout,
+            entries: [{
+                binding: 0,
+                resource: {
+                    buffer: pushConstants.gpuBuffer,
+                    size: 12,
+                }
+            }]
+        });
+
+        pass.setPipeline(this.ageCacheSlotsPipeline);
+        pass.setBindGroup(0, this.lruCacheBG);
+        for (var i = 0; i < pushConstants.nOffsets; ++i) {
+            pass.setBindGroup(1, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+            console.log(`dispatch age slots ${pushConstants.dispatchSizes[i]}`);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
+        }
+    }
 
     {
         var totalWorkGroups = this.alignedTotalElements / 32;

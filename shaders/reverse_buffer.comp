@@ -7,15 +7,22 @@ layout(set = 1, binding = 0, std430) buffer Values
     uint values[];
 };
 
+layout(set = 2, binding = 0, std140) uniform PushConstants
+{
+    uint work_group_offset;
+};
+
 void main(void)
 {
     // Each thread swaps a pair of elements in place
     const uint aligned_size = next_pow2(uint(ceil(float(size) / SORT_CHUNK_SIZE))) * SORT_CHUNK_SIZE;
+    // For buffers < SORT_CHUNK_SIZE don't swap elements out of bounds
     if (aligned_size < SORT_CHUNK_SIZE && gl_GlobalInvocationID.x > SORT_CHUNK_SIZE / 2) {
         return;
     }
-    const uint i = gl_GlobalInvocationID.x;
-    const uint j = aligned_size - gl_GlobalInvocationID.x - 1;
+    const uint idx = work_group_offset * SORT_CHUNK_SIZE + gl_GlobalInvocationID.x;
+    const uint i = idx;
+    const uint j = aligned_size - idx - 1;
     const uint tmp = values[i];
     values[i] = values[j];
     values[j] = tmp;

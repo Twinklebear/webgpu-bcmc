@@ -26,6 +26,9 @@ function buildPushConstantsBuffer(device, totalWorkGroups, pushConstants)
             if (pushConstants.buffer) {
                 pc = pushConstants.buffer;
             }
+            if (pc.byteLength > 248) {
+                console.log(`Error: push constants can be at most 248 bytes`);
+            }
             pushConstantsView = new Uint8Array(pc);
         }
         var mapping = idOffsetsBuffer.getMappedRange();

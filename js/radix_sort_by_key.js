@@ -89,9 +89,21 @@ var RadixSorter = function(device) {
         ],
     });
 
+    this.pushConstantsBGLayout = this.device.createBindGroupLayout({
+        entries: [{
+            binding: 0,
+            visibility: GPUShaderStage.COMPUTE,
+            buffer: {
+                hasDynamicOffset: true,
+                type: "uniform",
+            }
+        }]
+    });
+
     this.sortPipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts: [this.bgLayout, this.radixSortBGLayout],
+            bindGroupLayouts:
+                [this.bgLayout, this.radixSortBGLayout, this.pushConstantsBGLayout],
         }),
         compute: {
             module: this.device.createShaderModule({
@@ -107,6 +119,7 @@ var RadixSorter = function(device) {
                 this.bgLayout,
                 this.mergeBGLayout,
                 this.numWorkGroupsBGLayout,
+                this.pushConstantsBGLayout
             ],
         }),
         compute: {
@@ -119,7 +132,8 @@ var RadixSorter = function(device) {
 
     this.reversePipeline = this.device.createComputePipeline({
         layout: this.device.createPipelineLayout({
-            bindGroupLayouts: [this.bgLayout, this.reverseBGLayout],
+            bindGroupLayouts:
+                [this.bgLayout, this.reverseBGLayout, this.pushConstantsBGLayout],
         }),
         compute: {
             module: this.device.createShaderModule({code: reverse_buffer_comp_spv}),
@@ -294,11 +308,23 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
 
     var commandEncoder = this.device.createCommandEncoder();
     var pass = commandEncoder.beginComputePass();
-    pass.setPipeline(this.sortPipeline);
-    pass.setBindGroup(0, infoBindGroup);
-    pass.setBindGroup(1, radixSortBG);
-    pass.dispatchWorkgroups(chunkCount, 1, 1);
-    pass.end();
+    {
+        var pushConstants = buildPushConstantsBuffer(this.device, chunkCount);
+        var pushConstantsBG = this.device.createBindGroup({
+            layout: this.pushConstantsBGLayout,
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+        });
+
+        pass.setPipeline(this.sortPipeline);
+        pass.setBindGroup(0, infoBindGroup);
+        pass.setBindGroup(1, radixSortBG);
+        for (var i = 0; i < pushConstants.nOffsets; ++i) {
+            pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+            console.log(`dispatch sortPipeline size = ${pushConstants.dispatchSizes[i]}`);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
+        }
+        pass.end();
+    }
 
     // Merge the chunks up
     var pass = commandEncoder.beginComputePass();
@@ -318,20 +344,43 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
                 },
             ],
         });
+        console.log(`mergePipeline dispatch total = ${chunkCount / (2 << i)}`);
+        var pushConstants = buildPushConstantsBuffer(this.device, chunkCount / (2 << i));
+        var pushConstantsBG = this.device.createBindGroup({
+            layout: this.pushConstantsBGLayout,
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+        });
+
         pass.setBindGroup(1, mergeBindGroups[i % 2]);
         pass.setBindGroup(2, numWorkGroupsBG);
-        pass.dispatchWorkgroups(chunkCount / (2 << i), 1, 1);
+
+        for (var j = 0; j < pushConstants.nOffsets; ++j) {
+            pass.setBindGroup(3, pushConstantsBG, pushConstants.dynamicOffsets, j, 1);
+            console.log(
+                `dispatch mergePipeline chunk of size = ${pushConstants.dispatchSizes[j]}`);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[j], 1, 1);
+        }
     }
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
 
     var commandEncoder = this.device.createCommandEncoder();
     if (reverse) {
+        var pushConstants = buildPushConstantsBuffer(this.device, Math.ceil(chunkCount / 2));
+        var pushConstantsBG = this.device.createBindGroup({
+            layout: this.pushConstantsBGLayout,
+            entries: [{binding: 0, resource: {buffer: pushConstants.gpuBuffer, size: 4}}]
+        });
+
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.reversePipeline);
         pass.setBindGroup(0, infoBindGroup);
         pass.setBindGroup(1, reverseBG);
-        pass.dispatchWorkgroups(Math.ceil(chunkCount / 2), 1, 1);
+        for (var i = 0; i < pushConstants.nOffsets; ++i) {
+            pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
+            console.log(`dispatch reverse size = ${pushConstants.dispatchSizes[i]}`);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
+        }
         pass.end();
     }
 
