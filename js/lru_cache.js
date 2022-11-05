@@ -457,6 +457,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     perfTracker.lruScanNeededSlots.push(end - start);
     perfTracker.lruNumNewItems.push(numNewItems);
 
+    console.log(`LRU: num new items ${numNewItems}`);
     if (numNewItems == 0) {
         // console.log("------");
         // Push 0's for unexecuted steps
@@ -470,7 +471,6 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         perfTracker.lruWriteNewItems.push(0);
         return [0, undefined];
     }
-    console.log(`LRU: num new items ${numNewItems}`);
 
     // Compact the IDs of the elements we need into a list of new elements we'll add
     var newItemIDs = this.device.createBuffer({
