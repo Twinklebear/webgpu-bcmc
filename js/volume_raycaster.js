@@ -375,8 +375,8 @@ var VolumeRaycaster = function(device, canvas) {
                 binding: 3,
                 visibility: GPUShaderStage.COMPUTE,
                 storageTexture: {access: "write-only", format: renderTargetFormat}
-            },       
-            {binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}}, 
+            },
+            {binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
         ]
     });
 
@@ -692,8 +692,7 @@ var VolumeRaycaster = function(device, canvas) {
         ],
     });
     this.markRayActivePipeline = device.createComputePipeline({
-        layout:
-            device.createPipelineLayout({bindGroupLayouts: [this.markRayActiveBGLayout]}),
+        layout: device.createPipelineLayout({bindGroupLayouts: [this.markRayActiveBGLayout]}),
         compute: {
             module: device.createShaderModule({code: mark_ray_active_comp_spv}),
             entryPoint: "main",
@@ -1250,7 +1249,7 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
     pass.setBindGroup(0, bindGroup);
     for (var i = 0; i < pushConstants.nOffsets; ++i) {
         pass.setBindGroup(1, blockIDOffsetBG, pushConstants.dynamicOffsets, i, 1);
-        pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+        pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
     }
 
     // Compute each block's range including its neighbors
@@ -1259,7 +1258,7 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
     pass.setBindGroup(2, this.voxelBindGroup);
     for (var i = 0; i < pushConstants.nOffsets; ++i) {
         pass.setBindGroup(1, blockIDOffsetBG, pushConstants.dynamicOffsets, i, 1);
-        pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+        pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
     }
 
     // Enqueue pass to compute the coarse cell ranges
@@ -1282,7 +1281,7 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
     pass.setPipeline(this.computeCoarseCellRangePipeline);
     for (var i = 0; i < coarsePushConstants.nOffsets; ++i) {
         pass.setBindGroup(0, coarseRangeBG, coarsePushConstants.dynamicOffsets, i, 1);
-        pass.dispatch(coarsePushConstants.dispatchSizes[i], 1, 1);
+        pass.dispatchWorkgroups(coarsePushConstants.dispatchSizes[i], 1, 1);
     }
 
     pass.end();
@@ -1325,9 +1324,9 @@ VolumeRaycaster.prototype.renderSurface =
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.resetBlockActivePipeline);
         pass.setBindGroup(0, this.resetBlockActiveBG);
-        pass.dispatch(Math.ceil(this.blockGridDims[0] / 8),
-                      this.blockGridDims[1],
-                      this.blockGridDims[2]);
+        pass.dispatchWorkgroups(Math.ceil(this.blockGridDims[0] / 8),
+                                this.blockGridDims[1],
+                                this.blockGridDims[2]);
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
 
@@ -1353,9 +1352,9 @@ VolumeRaycaster.prototype.renderSurface =
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.resetBlockActivePipeline);
         pass.setBindGroup(0, this.resetBlockActiveBG);
-        pass.dispatch(Math.ceil(this.blockGridDims[0] / 8),
-                      this.blockGridDims[1],
-                      this.blockGridDims[2]);
+        pass.dispatchWorkgroups(Math.ceil(this.blockGridDims[0] / 8),
+                                this.blockGridDims[1],
+                                this.blockGridDims[2]);
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
     }
@@ -1401,7 +1400,7 @@ VolumeRaycaster.prototype.renderSurface =
         // var pass = commandEncoder.beginComputePass();
         // pass.setPipeline(this.initSpeculativeIDsPipeline);
         // pass.setBindGroup(0, this.initSpeculativeIDsBG);
-        // pass.dispatch(Math.ceil(this.canvas.width), this.canvas.height, 1);
+        // pass.dispatchWorkgroups(Math.ceil(this.canvas.width), this.canvas.height, 1);
         // pass.end();
 
         // this.device.queue.submit([commandEncoder.finish()]);
@@ -1414,7 +1413,8 @@ VolumeRaycaster.prototype.renderSurface =
         // });
         // var commandEncoder = this.device.createCommandEncoder();
         // commandEncoder.copyBufferToBuffer(
-        //     this.speculativeIDBuffer, 0, readbackSpeculativeIDBuffer, 0, this.speculativeIDBuffer.size);
+        //     this.speculativeIDBuffer, 0, readbackSpeculativeIDBuffer, 0,
+        //     this.speculativeIDBuffer.size);
         // this.device.queue.submit([commandEncoder.finish()]);
         // await this.device.queue.onSubmittedWorkDone();
         // await readbackSpeculativeIDBuffer.mapAsync(GPUMapMode.READ);
@@ -1425,7 +1425,6 @@ VolumeRaycaster.prototype.renderSurface =
         var numActiveBlocks = await this.sortActiveRaysByBlock(numRaysActive);
         end = performance.now();
         console.log(`Sort active rays by block: ${end - start}ms`);
-        
 
         start = performance.now();
         await this.raytraceVisibleBlocks(numActiveBlocks);
@@ -1441,36 +1440,36 @@ VolumeRaycaster.prototype.renderSurface =
         pass.setPipeline(this.depthCompositePipeline);
         pass.setBindGroup(0, this.depthCompositeBG);
         if (this.speculationCount == 0) {
-            pass.dispatch(this.canvas.width, Math.floor(this.canvas.height), 1);
+            pass.dispatchWorkgroups(this.canvas.width, Math.floor(this.canvas.height), 1);
         } else {
-            pass.dispatch(this.canvas.width, Math.ceil(this.canvas.height / this.speculationCount), 1);
+            pass.dispatchWorkgroups(
+                this.canvas.width, Math.ceil(this.canvas.height / this.speculationCount), 1);
         }
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
-        await this.device.queue.onSubmittedWorkDone();    
+        await this.device.queue.onSubmittedWorkDone();
 
         var commandEncoder = this.device.createCommandEncoder();
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.markRayActivePipeline);
         pass.setBindGroup(0, this.markRayActiveBG);
-        pass.dispatch(Math.ceil(this.canvas.width), this.canvas.height, 1);
+        pass.dispatchWorkgroups(Math.ceil(this.canvas.width), this.canvas.height, 1);
         pass.end();
         // We scan the speculativeRayOffsetBuffer, so copy the ray active information over
-        commandEncoder.copyBufferToBuffer(
-            this.rayActiveBuffer,
-            0,
-            this.speculativeRayOffsetBuffer,
-            0,
-            this.canvas.width * this.canvas.height * 4
-        );
+        commandEncoder.copyBufferToBuffer(this.rayActiveBuffer,
+                                          0,
+                                          this.speculativeRayOffsetBuffer,
+                                          0,
+                                          this.canvas.width * this.canvas.height * 4);
         this.device.queue.submit([commandEncoder.finish()]);
 
-        var nactive = await this.scanRayAfterActive.scan(this.canvas.width * this.canvas.height);
-        console.log(`num rays active after raytracing: ${nactive}`);
+        numRaysActive =
+            await this.scanRayAfterActive.scan(this.canvas.width * this.canvas.height);
+        console.log(`num rays active after raytracing: ${numRaysActive}`);
 
         var commandEncoder = this.device.createCommandEncoder();
-        this.speculationCount = Math.floor(this.canvas.width * this.canvas.height / nactive);
-        // var speculationCount = 0;
+        this.speculationCount =
+            Math.min(Math.floor(this.canvas.width * this.canvas.height / numRaysActive), 64);
         console.log(`Speculation count is ${this.speculationCount}`);
         var uploadSpeculationCount = this.device.createBuffer(
             {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
@@ -1484,7 +1483,7 @@ VolumeRaycaster.prototype.renderSurface =
     this.totalPassTime += end - startPass;
     this.numPasses += 1;
     //}
-    this.renderComplete = nactive == 0;
+    this.renderComplete = numRaysActive == 0;
     if (this.renderComplete) {
         console.log(`Avg time per pass ${this.totalPassTime / this.numPasses}ms`);
         // console.log(`Avg compact time per pass ${this.compactTimeSum /
@@ -1518,7 +1517,7 @@ VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
     var resetRaysPass = commandEncoder.beginComputePass(this.resetRaysPipeline);
     resetRaysPass.setBindGroup(0, this.resetRaysBG);
     resetRaysPass.setPipeline(this.resetRaysPipeline);
-    resetRaysPass.dispatch(Math.ceil(this.canvas.width / 8), this.canvas.height, 1);
+    resetRaysPass.dispatchWorkgroups(Math.ceil(this.canvas.width / 8), this.canvas.height, 1);
     resetRaysPass.end();
 
     var initialRaysPass = commandEncoder.beginRenderPass(this.initialRaysPassDesc);
@@ -1545,7 +1544,7 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     var resetSpecIDsPass = commandEncoder.beginComputePass();
     resetSpecIDsPass.setBindGroup(0, this.resetSpeculativeIDsBG);
     resetSpecIDsPass.setPipeline(this.resetSpeculativeIDsPipeline);
-    resetSpecIDsPass.dispatch(Math.ceil(this.canvas.width), this.canvas.height, 1);
+    resetSpecIDsPass.dispatchWorkgroups(Math.ceil(this.canvas.width), this.canvas.height, 1);
     resetSpecIDsPass.end();
 
     // Update the current pass index
@@ -1563,7 +1562,7 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     pass.setPipeline(this.macroTraversePipeline);
     pass.setBindGroup(0, this.macroTraverseBindGroup);
     pass.setBindGroup(1, this.macroTraverseRangesBG);
-    pass.dispatch(Math.ceil(this.canvas.width / 64), this.canvas.height, 1);
+    pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 64), this.canvas.height, 1);
 
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
@@ -1576,7 +1575,8 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     // });
     // var commandEncoder = this.device.createCommandEncoder();
     // commandEncoder.copyBufferToBuffer(
-    //     this.speculativeRayIDBuffer, 0, readbackSpeculativeIDBuffer, 0, this.speculativeRayIDBuffer.size);
+    //     this.speculativeRayIDBuffer, 0, readbackSpeculativeIDBuffer, 0,
+    //     this.speculativeRayIDBuffer.size);
     // this.device.queue.submit([commandEncoder.finish()]);
     // await this.device.queue.onSubmittedWorkDone();
     // await readbackSpeculativeIDBuffer.mapAsync(GPUMapMode.READ);
@@ -1595,14 +1595,14 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
     // Reset the # of rays for each block
     pass.setPipeline(this.resetBlockNumRaysPipeline);
     pass.setBindGroup(0, this.resetBlockNumRaysBG);
-    pass.dispatch(
+    pass.dispatchWorkgroups(
         Math.ceil(this.blockGridDims[0] / 8), this.blockGridDims[1], this.blockGridDims[2]);
 
     // Compute which blocks are active and how many rays each has
     pass.setPipeline(this.markBlockActivePipeline);
     pass.setBindGroup(0, this.markBlockActiveBG);
     pass.setBindGroup(1, this.renderTargetDebugBG);
-    pass.dispatch(Math.ceil(this.canvas.width / 8), this.canvas.height, 1);
+    pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 8), this.canvas.height, 1);
 
     pass.end();
 
@@ -1651,7 +1651,6 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
         readbackBlockNumRaysBuffer.destroy();
     }
     */
-    
 };
 
 // Scan the blockNumRaysBuffer storing the output in blockRayOffsetBuffer and
@@ -1673,7 +1672,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     var pass = commandEncoder.beginComputePass()
     pass.setPipeline(this.writeRayAndBlockIDPipeline);
     pass.setBindGroup(0, this.writeRayAndBlockIDBG);
-    pass.dispatch(Math.ceil(this.canvas.width / 8), this.canvas.height, 1);
+    pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 8), this.canvas.height, 1);
     pass.end();
 
     // We scan the rayActiveCompactOffsetBuffer, so copy the ray active information over
@@ -1704,15 +1703,15 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     var startCompacts = performance.now();
     // Compact the active ray IDs and their block IDs down
     await this.streamCompact.compactActive(this.canvas.width * this.canvas.height,
-                                              this.rayActiveBuffer,
-                                              this.rayActiveCompactOffsetBuffer,
-                                              this.speculativeRayIDBuffer,
-                                              this.rayIDBuffer);
+                                           this.rayActiveBuffer,
+                                           this.rayActiveCompactOffsetBuffer,
+                                           this.speculativeRayIDBuffer,
+                                           this.rayIDBuffer);
 
     await this.streamCompact.compactActiveIDs(this.canvas.width * this.canvas.height,
-                                                this.rayActiveBuffer,
-                                                this.rayActiveCompactOffsetBuffer,
-                                                this.compactSpeculativeIDBuffer);
+                                              this.rayActiveBuffer,
+                                              this.rayActiveCompactOffsetBuffer,
+                                              this.compactSpeculativeIDBuffer);
 
     await this.streamCompact.compactActive(this.canvas.width * this.canvas.height,
                                            this.rayActiveBuffer,
@@ -1732,12 +1731,15 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     this.compactTimeSum += (endCompacts - startCompacts);
 
     var compactRayBlockIDBufferCopy = this.device.createBuffer({
-        size: this.compactRayBlockIDBuffer.size,
+        size: this.radixSorter.getAlignedSize(this.compactRayBlockIDBuffer.size / 4) * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
     });
     var commandEncoder = this.device.createCommandEncoder();
-    commandEncoder.copyBufferToBuffer(
-        this.compactRayBlockIDBuffer, 0, compactRayBlockIDBufferCopy, 0, this.compactRayBlockIDBuffer.size);
+    commandEncoder.copyBufferToBuffer(this.compactRayBlockIDBuffer,
+                                      0,
+                                      compactRayBlockIDBufferCopy,
+                                      0,
+                                      this.compactRayBlockIDBuffer.size);
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
 
@@ -1861,7 +1863,7 @@ VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks
         pass.setBindGroup(0, this.combineBlockInformationBG);
         for (var i = 0; i < pushConstants.nOffsets; ++i) {
             pass.setBindGroup(1, blockIDOffsetBG, pushConstants.dynamicOffsets, i, 1);
-            pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
         }
         pass.end();
     }
@@ -1886,7 +1888,7 @@ VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks
         pass.setBindGroup(1, this.rtBlocksPipelineBG1);
         for (var i = 0; i < pushConstants.nOffsets; ++i) {
             pass.setBindGroup(2, blockIDOffsetBG, pushConstants.dynamicOffsets, i, 1);
-            pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
         }
         pass.end();
     }
@@ -1969,7 +1971,7 @@ VolumeRaycaster.prototype.decompressBlocks =
             ],
         });
         pass.setBindGroup(1, decompressBlocksStartOffsetBG);
-        pass.dispatch(Math.ceil(numWorkGroups), 1, 1);
+        pass.dispatchWorkgroups(Math.ceil(numWorkGroups), 1, 1);
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
     }

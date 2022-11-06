@@ -372,7 +372,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     // Age all slots in the cache
     pass.setPipeline(this.ageCacheSlotsPipeline);
     pass.setBindGroup(0, this.lruCacheBG);
-    pass.dispatch(this.cacheSize / 32, 1, 1);
+    pass.dispatchWorkgroups(this.cacheSize / 32, 1, 1);
 
     // For testing purposes
     /*
@@ -405,7 +405,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         pass.setBindGroup(1, markNewItemsBG);
         for (var i = 0; i < pushConstants.nOffsets; ++i) {
             pass.setBindGroup(2, pushConstantsBG, pushConstants.dynamicOffsets, i, 1);
-            pass.dispatch(pushConstants.dispatchSizes[i], 1, 1);
+            pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
         }
     }
     // For testing purposes
@@ -425,7 +425,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     // copyBufferToBuffer, since it's stored AoS to reduce our buffer use
     pass.setPipeline(this.extractSlotAvailablePipeline);
     pass.setBindGroup(1, this.outputSlotAvailableBG);
-    pass.dispatch(this.cacheSize / 32, 1, 1);
+    pass.dispatchWorkgroups(this.cacheSize / 32, 1, 1);
 
     pass.end();
     commandEncoder.copyBufferToBuffer(
@@ -575,7 +575,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         pass.setBindGroup(0, this.lruCacheBG);
         pass.setBindGroup(1, this.cacheInitBG);
         // Probably needs to chunk for very large volumes
-        pass.dispatch((newSize - this.cacheSize) / 32, 1, 1);
+        pass.dispatchWorkgroups((newSize - this.cacheSize) / 32, 1, 1);
         pass.end();
 
         // Copy in the old contents of the buffers to the new ones
@@ -618,7 +618,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         pass.setPipeline(this.extractSlotAvailablePipeline);
         pass.setBindGroup(0, this.lruCacheBG);
         pass.setBindGroup(1, this.outputSlotAvailableBG);
-        pass.dispatch(newSize / 32, 1, 1);
+        pass.dispatchWorkgroups(newSize / 32, 1, 1);
         pass.end();
 
         this.device.queue.submit([commandEncoder.finish()]);
@@ -656,7 +656,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     pass.setBindGroup(0, this.lruCacheBG);
     pass.setBindGroup(1, this.outputSlotAvailableForCompact);
     // Probably needs to chunk for very large volumes
-    pass.dispatch(this.cacheSize / 32, 1, 1);
+    pass.dispatchWorkgroups(this.cacheSize / 32, 1, 1);
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
     // I don't think we need an await here since it's all on the same queue
@@ -729,7 +729,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     pass.setBindGroup(0, this.lruCacheBG);
     pass.setBindGroup(1, outputAgeBG);
     pass.setBindGroup(2, outputAgeBGSize);
-    pass.dispatch(Math.ceil(numSlotsAvailable / 32), 1, 1);
+    pass.dispatchWorkgroups(Math.ceil(numSlotsAvailable / 32), 1, 1);
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
@@ -809,7 +809,7 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     pass.setBindGroup(1, cacheUpdateBG);
     pass.setBindGroup(2, numNewItemsBG);
     // TODO: Probably needs to chunk for large volumes
-    pass.dispatch(Math.ceil(numNewItems / 32), 1, 1);
+    pass.dispatchWorkgroups(Math.ceil(numNewItems / 32), 1, 1);
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
@@ -844,7 +844,7 @@ LRUCache.prototype.reset = async function() {
     pass.setPipeline(this.cacheInitPipeline);
     pass.setBindGroup(0, this.lruCacheBG);
     pass.setBindGroup(1, this.cacheInitBG);
-    pass.dispatch(this.cacheSize / 32, 1, 1);
+    pass.dispatchWorkgroups(this.cacheSize / 32, 1, 1);
     pass.end();
 
     // Also need to clear the cached item slots array, just copy the slot item

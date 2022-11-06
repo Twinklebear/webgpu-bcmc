@@ -2,8 +2,8 @@
 // #include "util.glsl"
 */
 
-let UINT_MAX: u32 = 0xffffffffu;
-let FLT_MAX: f32 = 3.402823466e+38;
+const UINT_MAX: u32 = 0xffffffffu;
+const FLT_MAX: f32 = 3.402823466e+38;
 
 type float2 = vec2<f32>;
 type float3 = vec3<f32>;
@@ -129,7 +129,7 @@ fn compute_block_id(block_pos: uint3) -> u32
     return block_pos.x + n_blocks.x * (block_pos.y + n_blocks.y * block_pos.z);
 }
 
-@stage(compute) @workgroup_size(8, 1, 1)
+@compute @workgroup_size(8, 1, 1)
 fn main(@builtin(global_invocation_id) g_invocation_id : vec3<u32>) {
     /*
     uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
