@@ -2,7 +2,7 @@
 
 #include "util.glsl"
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, std140) uniform VolumeParams
 {
@@ -26,6 +26,9 @@ layout(set = 0, binding = 2, std430) buffer RayActive
 };
 
 void main() {
+    if (gl_GlobalInvocationID.x >= image_width) {
+        return;
+    }
     uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
     ray_active[ray_index] = rays[ray_index].t != FLT_MAX ? 1 : 0;
 }

@@ -1457,7 +1457,7 @@ VolumeRaycaster.prototype.renderSurface =
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.markRayActivePipeline);
         pass.setBindGroup(0, this.markRayActiveBG);
-        pass.dispatchWorkgroups(Math.ceil(this.canvas.width), this.canvas.height, 1);
+        pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 32), this.canvas.height, 1);
         pass.end();
         // We scan the speculativeRayOffsetBuffer, so copy the ray active information over
         commandEncoder.copyBufferToBuffer(this.rayActiveBuffer,
