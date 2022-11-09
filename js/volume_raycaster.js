@@ -399,6 +399,7 @@ var VolumeRaycaster = function(device, canvas) {
             {binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
             {binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
             {binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
+            {binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}},
         ]
     });
 
@@ -974,6 +975,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
             {binding: 0, resource: {buffer: this.volumeInfoBuffer}},
             {binding: 1, resource: {buffer: this.speculativeRayIDBuffer}},
             {binding: 2, resource: {buffer: this.rayRGBZBuffer}},
+            {binding: 3, resource: {buffer: this.rayBlockIDBuffer}},
         ]
     });
 
@@ -1470,7 +1472,7 @@ VolumeRaycaster.prototype.renderSurface =
         var commandEncoder = this.device.createCommandEncoder();
         this.speculationCount =
             Math.min(Math.floor(this.canvas.width * this.canvas.height / numRaysActive), 64);
-        console.log(`Speculation count is ${this.speculationCount}`);
+        console.log(`Next pass speculation count is ${this.speculationCount}`);
         var uploadSpeculationCount = this.device.createBuffer(
             {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
         new Uint32Array(uploadSpeculationCount.getMappedRange()).set([this.speculationCount]);
@@ -1480,6 +1482,7 @@ VolumeRaycaster.prototype.renderSurface =
         this.device.queue.submit([commandEncoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();
     }
+    console.log("=============");
     this.totalPassTime += end - startPass;
     this.numPasses += 1;
     //}
@@ -1830,7 +1833,8 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
 };
 
 VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks) {
-    console.log(`Raytracing ${numActiveBlocks} blocks`);
+    console.log(
+        `Raytracing ${numActiveBlocks} blocks, speculation count = ${this.speculationCount}`);
 
     // Must recreate each time b/c cache buffer will grow
     var rtBlocksPipelineBG0 = this.device.createBindGroup({
@@ -1893,7 +1897,7 @@ VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks
         pass.end();
     }
 
-    await this.device.queue.submit([commandEncoder.finish()]);
+    this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
 };
 

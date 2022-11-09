@@ -285,9 +285,6 @@ void main(void)
 
     // Transform eye into the volume space, and then the block space 
     vec3 vol_eye = transformed_eye * volume_dims.xyz - vec3(0.5) - block_pos;
-    if (block_info.lod == 1) {
-        vol_eye *= 0.25;
-    }
 
     // Process all the rays for this block in parallel, each thread takes one ray
     // so we can do 64 rays at a time. For cases where a block projects to a lot more
@@ -312,12 +309,8 @@ void main(void)
             const uint ray_index = ray_ids[block_info.ray_offset + ray_id];
             pixel_coords = ivec2(ray_id_to_pos(ray_index));
             const uint spec_index = spec_ids[block_info.ray_offset + ray_id];
-            float z_val = FLT_MAX;
 
-            vec3 grid_ray_dir = rays[ray_index].ray_dir;
-            if (block_info.lod == 1) {
-                grid_ray_dir *= 0.25;
-            }
+            const vec3 grid_ray_dir = rays[ray_index].ray_dir;
 
             // Traverse the ray through the dual grid 
             float vertex_values[8];
@@ -329,6 +322,12 @@ void main(void)
             const vec2 brick_range =
                 intersect_box(vol_eye, grid_ray_dir, vec3(0), vec3(4.0));
 
+            // Make sure we actually intersect this brick, can have some glancing edge cases
+            if (brick_range.y <= brick_range.x) {
+                //ray_rgbz[spec_index] = vec4(1.0, 0.0, 0.0, -1000.0);
+                continue;
+            }
+
             GridIterator grid_iter =
                 init_grid_iterator(vol_eye,
                                    grid_ray_dir,
@@ -337,7 +336,6 @@ void main(void)
             ivec3 v000 = ivec3(0);
             vec2 cell_t_range;
             while (grid_iterator_get_cell(grid_iter, cell_t_range, v000)) {
-                // For when we are past the LOD_threshold and want full accuracy
                 compute_vertex_values(v000, block_dims, vertex_values, cell_range);
 
                 const bool skip_cell = isovalue < cell_range.x || isovalue > cell_range.y;
@@ -348,7 +346,6 @@ void main(void)
 
                     if (hit_surface) {
                         hit_p = vol_eye + grid_ray_dir * t_hit;
-                        z_val = t_hit;
                         break;
                     }
                 }
@@ -368,17 +365,13 @@ void main(void)
                 if (dot(N, grid_ray_dir) > 0.0) {
                     N = -N;
                 }
-                vec3 base_color = vec3(0.3, 0.3, 0.9);
-                if (block_info.lod == 1) {
-                    base_color = vec3(0.9, 0.3, 0.3);
-                }
+                const vec3 base_color = vec3(0.3, 0.3, 0.9);
                 // color.xyz = vec3(cell_range.y / 4096.0);
                 // color.xyz = vec3(v000) / block_pos;
                 color.xyz = shading(N, L, V, base_color);
                 // color.xyz = base_color;
-                ray_rgbz[spec_index] = vec4(color.r, color.g, color.b, t_hit);
+                ray_rgbz[spec_index] = vec4(color.xyz, t_hit);
             }
-
             // imageStore(render_target, pixel_coords, color);
         }
     }

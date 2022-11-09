@@ -25,10 +25,16 @@ layout(set = 0, binding = 2, std430) buffer RayRGBZ
     vec4 ray_rgbz[];
 };
 
+layout(set = 0, binding = 3, std430) buffer RayBlockIDs
+{
+    uint block_ids[];
+};
+
 void main(void)
 {
     uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
     ray_ids[ray_index] = UINT_MAX;
     ray_rgbz[ray_index] = vec4(0, 0, 0, FLT_MAX);
+    block_ids[ray_index] = UINT_MAX;
 }
 
