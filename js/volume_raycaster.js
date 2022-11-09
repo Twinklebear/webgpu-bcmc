@@ -1341,7 +1341,7 @@ VolumeRaycaster.prototype.renderSurface =
 
         this.totalPassTime = 0;
         this.numPasses = 0;
-        this.speculationCount = 0;
+        this.speculationCount = 1;
     }
     // for (var i = 0; i < 50; ++i) {
     console.log(`++++ Surface pass ${this.numPasses} ++++`);
@@ -1441,14 +1441,9 @@ VolumeRaycaster.prototype.renderSurface =
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.depthCompositePipeline);
         pass.setBindGroup(0, this.depthCompositeBG);
-        if (this.speculationCount == 0) {
-            pass.dispatchWorkgroups(
-                Math.ceil(this.canvas.width / 32), Math.floor(this.canvas.height), 1);
-        } else {
-            pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 32),
-                                    Math.ceil(this.canvas.height / this.speculationCount),
-                                    1);
-        }
+        pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 32),
+                                Math.ceil(this.canvas.height / this.speculationCount),
+                                1);
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();
