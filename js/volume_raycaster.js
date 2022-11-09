@@ -1549,7 +1549,7 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     var resetSpecIDsPass = commandEncoder.beginComputePass();
     resetSpecIDsPass.setBindGroup(0, this.resetSpeculativeIDsBG);
     resetSpecIDsPass.setPipeline(this.resetSpeculativeIDsPipeline);
-    resetSpecIDsPass.dispatchWorkgroups(Math.ceil(this.canvas.width), this.canvas.height, 1);
+    resetSpecIDsPass.dispatchWorkgroups(Math.ceil(this.canvas.width / 32), this.canvas.height, 1);
     resetSpecIDsPass.end();
 
     // Update the current pass index
