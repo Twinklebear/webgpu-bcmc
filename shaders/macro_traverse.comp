@@ -177,7 +177,8 @@ void main() {
 
             if (isovalue >= cell_range.x && isovalue <= cell_range.y) {
                 if (speculation_count > 0) {
-                    block_ids[ray_offsets[ray_index] * speculation_count + speculated] = block_index;
+                    block_ids[ray_offsets[ray_index] * speculation_count + speculated] =
+                        block_index;
                     speculated++;
                 } else {
                     block_ids[ray_index] = block_index;
@@ -185,7 +186,7 @@ void main() {
                 
                 // We only save the last iterator state to resume from so we can skip these writes
                 // until we're on the last speculated ray
-                if (speculated == speculation_count || speculation_count < 1) {
+                if (speculated == speculation_count || speculation_count == 0) {
                     // Note: grid dims is redundant and an easy one to not store
                     iterator_state[ray_index * 2].cell = coarse_grid_iter.cell;
                     iterator_state[ray_index * 2].t_max = coarse_grid_iter.t_max;
