@@ -1442,10 +1442,12 @@ VolumeRaycaster.prototype.renderSurface =
         pass.setPipeline(this.depthCompositePipeline);
         pass.setBindGroup(0, this.depthCompositeBG);
         if (this.speculationCount == 0) {
-            pass.dispatchWorkgroups(this.canvas.width, Math.floor(this.canvas.height), 1);
-        } else {
             pass.dispatchWorkgroups(
-                this.canvas.width, Math.ceil(this.canvas.height / this.speculationCount), 1);
+                Math.ceil(this.canvas.width / 32), Math.floor(this.canvas.height), 1);
+        } else {
+            pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 32),
+                                    Math.ceil(this.canvas.height / this.speculationCount),
+                                    1);
         }
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);

@@ -2,8 +2,7 @@
 
 #include "util.glsl"
 
-// TODO: Make local size not be 1
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, std140) uniform ViewParams
 {
@@ -39,8 +38,12 @@ layout(set = 0, binding = 4, std140) uniform VolumeParams
 
 void main(void)
 {
+    if (gl_GlobalInvocationID.x >= image_width) {
+        return;
+    }
     uint ray_index;
-    uint spec_index = (gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width) * speculation_count; 
+    const uint spec_index =
+        (gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width) * speculation_count; 
     if (speculation_count > 0) {
         ray_index = ray_ids[spec_index];
     } else {
@@ -59,6 +62,6 @@ void main(void)
         color = ray_rgbz[ray_index];
     }
     if (color.a != FLT_MAX) {
-        imageStore(render_target, pixel_coords, vec4(color.r, color.g, color.b, 1));
+        imageStore(render_target, pixel_coords, vec4(color.rgb, 1));
     }
 }
