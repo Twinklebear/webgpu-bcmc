@@ -379,12 +379,13 @@ var VolumeRaycaster = function(device, canvas) {
             {binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: {type: "uniform"}},
         ]
     });
+    this.depthCompositeBG1Layout = device.createBindGroupLayout({
+        entries: [{binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: {type: "storage"}}]
+    });
 
     this.depthCompositePipeline = device.createComputePipeline({
         layout: device.createPipelineLayout({
-            bindGroupLayouts: [
-                this.depthCompositeBGLayout,
-            ],
+            bindGroupLayouts: [this.depthCompositeBGLayout, this.depthCompositeBG1Layout],
         }),
         compute: {
             module: device.createShaderModule({
@@ -990,6 +991,13 @@ VolumeRaycaster.prototype.setCompressedVolume =
         ]
     });
 
+    this.depthCompositeBG1 = this.device.createBindGroup({
+        layout: this.depthCompositeBG1Layout,
+        entries: [
+            {binding: 0, resource: {buffer: this.rayInformationBuffer}},
+        ]
+    });
+
     // this.initSpeculativeIDsBG = this.device.createBindGroup({
     //     layout: this.initSpeculativeIDsBGLayout,
     //     entries: [
@@ -1309,6 +1317,11 @@ VolumeRaycaster.prototype.renderSurface =
         this.raytraceTimeSum = 0;
         this.decompressTimes = [];
         this.decompressTimeSum = 0;
+
+        this.totalPassTime = 0;
+        this.numPasses = 0;
+        this.speculationCount = 1;
+
         console.log(`Render params changed, LOD: ${LODThreshold}`);
         // Upload the isovalue
         await this.uploadIsovalueBuf.mapAsync(GPUMapMode.WRITE);
@@ -1321,6 +1334,15 @@ VolumeRaycaster.prototype.renderSurface =
         new Uint32Array(this.uploadLODBuf.getMappedRange()).set([LODThreshold]);
         this.uploadLODBuf.unmap();
         commandEncoder.copyBufferToBuffer(this.uploadLODBuf, 0, this.LODThresholdBuf, 0, 4);
+
+        // We need to reset the speculation count
+        console.log(`Upload new speculation count = ${this.speculationCount}`);
+        var uploadSpeculationCount = this.device.createBuffer(
+            {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
+        new Uint32Array(uploadSpeculationCount.getMappedRange()).set([this.speculationCount]);
+        uploadSpeculationCount.unmap();
+        commandEncoder.copyBufferToBuffer(
+            uploadSpeculationCount, 0, this.viewParamBuf, (16 + 8 + 1 + 1) * 4, 4);
 
         // Reset active blocks for the new viewpoint/isovalue to allow eviction of old blocks
         var pass = commandEncoder.beginComputePass();
@@ -1338,10 +1360,6 @@ VolumeRaycaster.prototype.renderSurface =
         console.log(`Compute initial rays took ${end - start} ms`);
         this.initialRayTimes.push(end - start);
         this.initialRayTimeSum += (end - start);
-
-        this.totalPassTime = 0;
-        this.numPasses = 0;
-        this.speculationCount = 1;
     }
     // for (var i = 0; i < 50; ++i) {
     console.log(`++++ Surface pass ${this.numPasses} ++++`);
@@ -1441,6 +1459,7 @@ VolumeRaycaster.prototype.renderSurface =
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.depthCompositePipeline);
         pass.setBindGroup(0, this.depthCompositeBG);
+        pass.setBindGroup(1, this.depthCompositeBG1);
         pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 32),
                                 Math.ceil(this.canvas.height / this.speculationCount),
                                 1);
@@ -1512,7 +1531,8 @@ VolumeRaycaster.prototype.renderSurface =
 VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
     var commandEncoder = this.device.createCommandEncoder();
 
-    commandEncoder.copyBufferToBuffer(viewParamUpload, 0, this.viewParamBuf, 0, 32 * 4);
+    commandEncoder.copyBufferToBuffer(
+        viewParamUpload, 0, this.viewParamBuf, 0, (16 + 8 + 1) * 4);
 
     var resetRaysPass = commandEncoder.beginComputePass(this.resetRaysPipeline);
     resetRaysPass.setBindGroup(0, this.resetRaysBG);
@@ -1544,7 +1564,8 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     var resetSpecIDsPass = commandEncoder.beginComputePass();
     resetSpecIDsPass.setBindGroup(0, this.resetSpeculativeIDsBG);
     resetSpecIDsPass.setPipeline(this.resetSpeculativeIDsPipeline);
-    resetSpecIDsPass.dispatchWorkgroups(Math.ceil(this.canvas.width / 32), this.canvas.height, 1);
+    resetSpecIDsPass.dispatchWorkgroups(
+        Math.ceil(this.canvas.width / 32), this.canvas.height, 1);
     resetSpecIDsPass.end();
 
     // Update the current pass index

@@ -355,7 +355,6 @@ void main(void)
             if (hit_surface) {
                 // color.xyz = vec3(rays[ray_index].t / (padded_dims.x));
                 // block_ids[ray_index] = UINT_MAX;
-                // rays[ray_index].t_next = FLT_MAX;
                 rays[ray_index].t = FLT_MAX;
 
                 vec3 N = compute_normal(v000, hit_p, vertex_values);
