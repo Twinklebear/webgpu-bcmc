@@ -72,15 +72,16 @@
     isovalueSlider.value = (dataset.range[0] + dataset.range[1]) / 2.0;
     var currentIsovalue = isovalueSlider.value;
 
+    /*
     const defaultEye = vec3.set(vec3.create(), 0.0, 0.0, 1.0);
     const center = vec3.set(vec3.create(), 0.0, 0.0, 0.0);
     const up = vec3.set(vec3.create(), 0.0, 1.0, 0.0);
-    /*
-      const defaultEye = vec3.set(vec3.create(), -0.256, -0.364, -0.009);
-      const defaultDir = vec3.set(vec3.create(), 0.507, 0.869, 0.0469);
-      const center = vec3.add(vec3.create(), defaultEye, defaultDir);
-      const up = vec3.set(vec3.create(), -0.0088, -0.0492, 0.999);
-      */
+    */
+    const defaultEye = vec3.set(vec3.create(), -0.2356, -0.1801, 0.1008);
+    const defaultDir = vec3.set(vec3.create(), 0.2091, 0.8379, -0.5041);
+    const center = vec3.add(vec3.create(), defaultEye, defaultDir);
+    const up = vec3.set(vec3.create(), 0.0184, 0.5121, 0.8588);
+    // */
     var camera = new ArcballCamera(defaultEye, center, up, 4, [
         canvas.width,
         canvas.height,
@@ -206,15 +207,15 @@
             var eyePos = camera.eyePos();
             var eyeDir = camera.eyeDir();
             var upDir = camera.upDir();
-            camDisplay.innerHTML = `eye = ${eyePos[0].toFixed(4)} ${eyePos[1].toFixed(
+            camDisplay.innerHTML = `eye = ${eyePos[0].toFixed(4)}, ${eyePos[1].toFixed(
                 4
-            )} ${eyePos[2].toFixed(4)}<br/>
-                dir = ${eyeDir[0].toFixed(4)} ${eyeDir[1].toFixed(
+            )}, ${eyePos[2].toFixed(4)}<br/>
+                dir = ${eyeDir[0].toFixed(4)}, ${eyeDir[1].toFixed(
                 4
-            )} ${eyeDir[2].toFixed(4)}<br/>
-                up = ${upDir[0].toFixed(4)} ${upDir[1].toFixed(
+            )}, ${eyeDir[2].toFixed(4)}<br/>
+                up = ${upDir[0].toFixed(4)}, ${upDir[1].toFixed(
                 4
-            )} ${upDir[2].toFixed(4)}`;
+            )}, ${upDir[2].toFixed(4)}`;
         }
 
         await animationFrame();

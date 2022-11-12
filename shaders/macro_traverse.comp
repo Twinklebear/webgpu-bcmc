@@ -2,7 +2,7 @@
 
 #include "util.glsl"
 
-layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, std140) uniform VolumeParams
 {
@@ -52,6 +52,7 @@ layout(set = 0, binding = 7, std430) buffer RayOffsets
     uint ray_offsets[];
 };
 
+// rayBlockIDBuffer
 layout(set = 0, binding = 8, std430) buffer RayBlockIDs
 {
     uint block_ids[];
@@ -211,6 +212,7 @@ void main() {
         // If we didn't intersect this ray with any blocks (no speculated rays spawned),
         // then this ray has terminated.
         rays[ray_index].t = FLT_MAX;
+        //imageStore(render_target, pixel_coords, vec4(1, 0, 0, 1));
     } else if (speculated < speculation_count) {
         // If we speculated some rays, then this ray is partially terminated. We need
         // to finish tracing the speculated rays, then can mark it complete in depth_composite

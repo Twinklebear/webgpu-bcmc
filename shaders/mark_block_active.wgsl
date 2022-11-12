@@ -110,6 +110,7 @@ layout(set = 0, binding = 6, std430) buffer BlockVisible
 };
 */
 @group(0) @binding(6) var<storage, read_write> block_visible : array<u32>;
+// rayBlockIDBuffer
 @group(0) @binding(7) var<storage, read_write> block_ids : array<u32>;
 
 

@@ -52,6 +52,9 @@ void main(void)
         spec_index =
             (gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width) * speculation_count; 
         ray_index = ray_ids[spec_index];
+        if (rays[ray_index].t == FLT_MAX) {
+            return;
+        }
     } else {
         ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
         spec_index = ray_index;
@@ -64,6 +67,7 @@ void main(void)
         }
     }
     if (color.a != FLT_MAX) {
+        rays[ray_index].t = FLT_MAX;
         imageStore(render_target, pixel_coords, vec4(color.rgb, 1));
     }
     // Terminate rays that were partially speculated and may not have hit anything

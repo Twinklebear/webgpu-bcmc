@@ -1410,11 +1410,12 @@ VolumeRaycaster.prototype.renderSurface =
     }
 
     start = performance.now();
-    var numRaysActive = await this.computeBlockRayOffsets();
+    var numSpeculatedRaysActive = await this.computeBlockRayOffsets();
+    var numPixelsActive = 0;
     end = performance.now();
     console.log(`Ray active and offsets: ${end - start}ms`);
-    console.log(`numRaysActive = ${numRaysActive}`);
-    if (numRaysActive > 0) {
+    console.log(`numSpeculatedRaysActive = ${numSpeculatedRaysActive}`);
+    if (numSpeculatedRaysActive > 0) {
         // var commandEncoder = this.device.createCommandEncoder();
 
         // var pass = commandEncoder.beginComputePass();
@@ -1442,7 +1443,7 @@ VolumeRaycaster.prototype.renderSurface =
         // console.log(specIDs);
 
         start = performance.now();
-        var numActiveBlocks = await this.sortActiveRaysByBlock(numRaysActive);
+        var numActiveBlocks = await this.sortActiveRaysByBlock(numSpeculatedRaysActive);
         end = performance.now();
         console.log(`Sort active rays by block: ${end - start}ms`);
 
@@ -1461,6 +1462,8 @@ VolumeRaycaster.prototype.renderSurface =
         pass.setBindGroup(0, this.depthCompositeBG);
         pass.setBindGroup(1, this.depthCompositeBG1);
         pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 32),
+                                // TODO: spec counts should be even? otherwise need to handle
+                                // some possible out of bound exec here
                                 Math.ceil(this.canvas.height / this.speculationCount),
                                 1);
         pass.end();
@@ -1474,20 +1477,22 @@ VolumeRaycaster.prototype.renderSurface =
         pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 32), this.canvas.height, 1);
         pass.end();
         // We scan the speculativeRayOffsetBuffer, so copy the ray active information over
+        // TODO: I think this is speculated rays active, not
         commandEncoder.copyBufferToBuffer(this.rayActiveBuffer,
                                           0,
                                           this.speculativeRayOffsetBuffer,
                                           0,
                                           this.canvas.width * this.canvas.height * 4);
         this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
 
-        numRaysActive =
+        numPixelsActive =
             await this.scanRayAfterActive.scan(this.canvas.width * this.canvas.height);
-        console.log(`num rays active after raytracing: ${numRaysActive}`);
+        console.log(`num pixels active after raytracing: ${numPixelsActive}`);
 
         var commandEncoder = this.device.createCommandEncoder();
-        this.speculationCount =
-            Math.min(Math.floor(this.canvas.width * this.canvas.height / numRaysActive), 64);
+        this.speculationCount = Math.min(
+            Math.floor(this.canvas.width * this.canvas.height / numPixelsActive), 2);  // 64);
         console.log(`Next pass speculation count is ${this.speculationCount}`);
         var uploadSpeculationCount = this.device.createBuffer(
             {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
@@ -1502,7 +1507,7 @@ VolumeRaycaster.prototype.renderSurface =
     this.totalPassTime += end - startPass;
     this.numPasses += 1;
     //}
-    this.renderComplete = numRaysActive == 0;
+    this.renderComplete = numPixelsActive == 0;
     if (this.renderComplete) {
         console.log(`Avg time per pass ${this.totalPassTime / this.numPasses}ms`);
         // console.log(`Avg compact time per pass ${this.compactTimeSum /
@@ -1532,7 +1537,7 @@ VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
     var commandEncoder = this.device.createCommandEncoder();
 
     commandEncoder.copyBufferToBuffer(
-        viewParamUpload, 0, this.viewParamBuf, 0, (16 + 8 + 1) * 4);
+        viewParamUpload, 0, this.viewParamBuf, 0, (16 + 8 + 2) * 4);
 
     var resetRaysPass = commandEncoder.beginComputePass(this.resetRaysPipeline);
     resetRaysPass.setBindGroup(0, this.resetRaysBG);
@@ -1583,26 +1588,64 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     pass.setPipeline(this.macroTraversePipeline);
     pass.setBindGroup(0, this.macroTraverseBindGroup);
     pass.setBindGroup(1, this.macroTraverseRangesBG);
-    pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 64), this.canvas.height, 1);
+    // pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 64), this.canvas.height, 1);
+    pass.dispatchWorkgroups(this.canvas.width, this.canvas.height, 1);
 
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
 
-    // Log speculative ray IDs buffer
-    // var readbackSpeculativeIDBuffer = this.device.createBuffer({
-    //     size: this.speculativeRayIDBuffer.size,
-    //     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-    // });
-    // var commandEncoder = this.device.createCommandEncoder();
-    // commandEncoder.copyBufferToBuffer(
-    //     this.speculativeRayIDBuffer, 0, readbackSpeculativeIDBuffer, 0,
-    //     this.speculativeRayIDBuffer.size);
-    // this.device.queue.submit([commandEncoder.finish()]);
-    // await this.device.queue.onSubmittedWorkDone();
-    // await readbackSpeculativeIDBuffer.mapAsync(GPUMapMode.READ);
-    // var specIDs = new Uint32Array(readbackSpeculativeIDBuffer.getMappedRange());
-    // console.log(specIDs);
+    // I'm curious to see the list of blocks traversed by rays/speculated rays to compare what
+    // the hell is going on
+    var dbgPixelIDs = this.device.createBuffer({
+        size: this.canvas.width * this.canvas.height * 4,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+    });
+    var dbgRayOffsets = this.device.createBuffer({
+        size: this.canvas.width * this.canvas.height * 4,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+    });
+    var dbgBlockIDs = this.device.createBuffer({
+        size: this.canvas.width * this.canvas.height * 4,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+    });
+    {
+        var commandEncoder = this.device.createCommandEncoder();
+        commandEncoder.copyBufferToBuffer(this.speculativeRayIDBuffer,
+                                          0,
+                                          dbgPixelIDs,
+                                          0,
+                                          this.canvas.width * this.canvas.height * 4);
+        commandEncoder.copyBufferToBuffer(this.speculativeRayOffsetBuffer,
+                                          0,
+                                          dbgPixelIDs,
+                                          0,
+                                          this.canvas.width * this.canvas.height * 4);
+        commandEncoder.copyBufferToBuffer(this.rayBlockIDBuffer,
+                                          0,
+                                          dbgBlockIDs,
+                                          0,
+                                          this.canvas.width * this.canvas.height * 4);
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+
+        await dbgPixelIDs.mapAsync(GPUMapMode.READ);
+        await dbgRayOffsets.mapAsync(GPUMapMode.READ);
+        await dbgBlockIDs.mapAsync(GPUMapMode.READ);
+
+        var pixelIDs = new Uint32Array(dbgPixelIDs.getMappedRange());
+        var rayOffsets = new Uint32Array(dbgRayOffsets.getMappedRange());
+        var blockIDs = new Uint32Array(dbgBlockIDs.getMappedRange());
+
+        for (var i = 0; i < this.canvas.width * this.canvas.height; ++i) {
+            console.log(`Entry ${i} pixelID: ${pixelIDs[i]}, blockID: ${
+                blockIDs[i]}, rayOffset: ${rayOffsets[i]}`);
+        }
+
+        dbgPixelIDs.unmap();
+        dbgRayOffsets.unmap();
+        dbgBlockIDs.unmap();
+    }
 
     uploadPassIndex.destroy();
 };
@@ -1721,6 +1764,63 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     if (numRaysActive != nactive) {
         console.log(`nactive ${nactive} doesn't match numRaysActive ${numRaysActive}!?`);
     }
+
+    {
+        // Readback the unsorted original rayIDs, active buffer and block IDs
+        var readbackRayIDs = this.device.createBuffer({
+            size: this.canvas.width * this.canvas.height * 4,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+        });
+        var readbackRayActive = this.device.createBuffer({
+            size: this.canvas.width * this.canvas.height * 4,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+        });
+        var readbackRayBlockIDs = this.device.createBuffer({
+            size: this.canvas.width * this.canvas.height * 4,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+        });
+        var commandEncoder = this.device.createCommandEncoder();
+        commandEncoder.copyBufferToBuffer(this.speculativeRayIDBuffer,
+                                          0,
+                                          readbackRayIDs,
+                                          0,
+                                          this.canvas.width * this.canvas.height * 4);
+        commandEncoder.copyBufferToBuffer(this.rayActiveBuffer,
+                                          0,
+                                          readbackRayActive,
+                                          0,
+                                          this.canvas.width * this.canvas.height * 4);
+        commandEncoder.copyBufferToBuffer(this.rayBlockIDBuffer,
+                                          0,
+                                          readbackRayBlockIDs,
+                                          0,
+                                          this.canvas.width * this.canvas.height * 4);
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+
+        await readbackRayIDs.mapAsync(GPUMapMode.READ);
+        await readbackRayActive.mapAsync(GPUMapMode.READ);
+        await readbackRayBlockIDs.mapAsync(GPUMapMode.READ);
+
+        var rayIDs = new Uint32Array(readbackRayIDs.getMappedRange());
+        var rayActive = new Uint32Array(readbackRayActive.getMappedRange());
+        var rayBlockIDs = new Uint32Array(readbackRayBlockIDs.getMappedRange());
+
+        var dbgNumActive = 0;
+        for (var i = 0; i < this.canvas.height * this.canvas.width; ++i) {
+            if (rayActive[i]) {
+                ++dbgNumActive;
+                console.log(`Active speculated ray id ${i}: rayID: ${rayIDs[i]}, active: ${
+                    rayActive[i]}, block: ${rayBlockIDs[i]}`);
+            }
+        }
+        console.log(`Debug num speculated active = ${dbgNumActive}`);
+
+        readbackRayIDs.unmap();
+        readbackRayActive.unmap();
+        readbackRayBlockIDs.unmap();
+    }
+
     var startCompacts = performance.now();
     // Compact the active ray IDs and their block IDs down
     await this.streamCompact.compactActive(this.canvas.width * this.canvas.height,
@@ -1753,7 +1853,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
 
     var compactRayBlockIDBufferCopy = this.device.createBuffer({
         size: this.radixSorter.getAlignedSize(this.compactRayBlockIDBuffer.size / 4) * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
     });
     var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(this.compactRayBlockIDBuffer,
@@ -1764,14 +1864,144 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
 
+    // Readback the unsorted compact rayIDs and compact speculativeIDs
+    var readbackUnsortedCompactRayIDs = this.device.createBuffer(
+        {size: numRaysActive * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+    var readbackUnsortedCompactSpecIDs = this.device.createBuffer(
+        {size: numRaysActive * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+    var readbackUnsortedRayBlockIDBuffer = this.device.createBuffer(
+        {size: numRaysActive * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+
+    {
+        var commandEncoder = this.device.createCommandEncoder();
+        commandEncoder.copyBufferToBuffer(
+            this.rayIDBuffer, 0, readbackUnsortedCompactRayIDs, 0, numRaysActive * 4);
+        commandEncoder.copyBufferToBuffer(this.compactSpeculativeIDBuffer,
+                                          0,
+                                          readbackUnsortedCompactSpecIDs,
+                                          0,
+                                          numRaysActive * 4);
+        commandEncoder.copyBufferToBuffer(this.compactRayBlockIDBuffer,
+                                          0,
+                                          readbackUnsortedRayBlockIDBuffer,
+                                          0,
+                                          numRaysActive * 4);
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+    }
+
     var start = performance.now();
     // Sort active ray IDs by their block ID
+    // TODO: It would also perform better to have a specific sort for handling large keys
+    // than running the sort twice.
     await this.radixSorter.sort(
         this.compactRayBlockIDBuffer, this.rayIDBuffer, numRaysActive, false);
     await this.radixSorter.sort(
         compactRayBlockIDBufferCopy, this.compactSpeculativeIDBuffer, numRaysActive, false);
     var end = performance.now();
     console.log(`sortActiveRaysByBlock: Sort rays by blocks: ${end - start}ms`);
+
+    // Now readback the sorted versions to compare against
+    var readbackSortedCompactRayIDs = this.device.createBuffer(
+        {size: numRaysActive * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+    var readbackSortedCompactSpecIDs = this.device.createBuffer(
+        {size: numRaysActive * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+    var readbackSortedRayBlockIDBuffer0 = this.device.createBuffer(
+        {size: numRaysActive * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+    var readbackSortedRayBlockIDBuffer1 = this.device.createBuffer(
+        {size: numRaysActive * 4, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ});
+
+    {
+        var commandEncoder = this.device.createCommandEncoder();
+        commandEncoder.copyBufferToBuffer(
+            this.rayIDBuffer, 0, readbackSortedCompactRayIDs, 0, numRaysActive * 4);
+        commandEncoder.copyBufferToBuffer(this.compactSpeculativeIDBuffer,
+                                          0,
+                                          readbackSortedCompactSpecIDs,
+                                          0,
+                                          numRaysActive * 4);
+        commandEncoder.copyBufferToBuffer(this.compactRayBlockIDBuffer,
+                                          0,
+                                          readbackSortedRayBlockIDBuffer0,
+                                          0,
+                                          numRaysActive * 4);
+        commandEncoder.copyBufferToBuffer(compactRayBlockIDBufferCopy,
+                                          0,
+                                          readbackSortedRayBlockIDBuffer1,
+                                          0,
+                                          numRaysActive * 4);
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+    }
+
+    // Make the pair of (block id, ray id, speculative id) to sort as a group and compare
+    // results
+    var SpeculativeBlockRay = function(block_id, ray_id, spec_id) {
+        this.block_id = block_id;
+        this.ray_id = ray_id;
+        this.spec_id = spec_id;
+    };
+
+    var specBlockIDs = [];
+    if (this.speculationCount > 1) {
+        await readbackUnsortedCompactRayIDs.mapAsync(GPUMapMode.READ);
+        await readbackUnsortedCompactSpecIDs.mapAsync(GPUMapMode.READ);
+        await readbackUnsortedRayBlockIDBuffer.mapAsync(GPUMapMode.READ);
+
+        var unsortCompactRayIDs =
+            new Uint32Array(readbackUnsortedCompactRayIDs.getMappedRange());
+        var unsortCompactSpecIDs =
+            new Uint32Array(readbackUnsortedCompactSpecIDs.getMappedRange());
+        var unsortCompactRayBlockIDs =
+            new Uint32Array(readbackUnsortedRayBlockIDBuffer.getMappedRange());
+
+        console.log(`numSpeculatedRaysActive = ${numRaysActive}, speculationCount = ${
+            this.speculationCount}`);
+        for (var i = 0; i < numRaysActive; ++i) {
+            var specBlockRay = new SpeculativeBlockRay(
+                unsortCompactRayBlockIDs[i], unsortCompactRayIDs[i], unsortCompactSpecIDs[i]);
+            specBlockIDs.push(specBlockRay);
+            console.log(`Active ray ${i}: rayID: ${specBlockRay.ray_id}, specID ${
+                specBlockRay.spec_id}, block ${specBlockRay.block_id}`);
+        }
+
+        readbackUnsortedCompactRayIDs.unmap();
+        readbackUnsortedCompactSpecIDs.unmap();
+        readbackUnsortedRayBlockIDBuffer.unmap();
+
+        await readbackSortedCompactRayIDs.mapAsync(GPUMapMode.READ);
+        await readbackSortedCompactSpecIDs.mapAsync(GPUMapMode.READ);
+        await readbackSortedRayBlockIDBuffer0.mapAsync(GPUMapMode.READ);
+        await readbackSortedRayBlockIDBuffer1.mapAsync(GPUMapMode.READ);
+
+        var sortedRayIDs = new Uint32Array(readbackSortedCompactRayIDs.getMappedRange());
+        var sortedSpecIDs = new Uint32Array(readbackSortedCompactSpecIDs.getMappedRange());
+        var sortedBlockID0 = new Uint32Array(readbackSortedRayBlockIDBuffer0.getMappedRange());
+        var sortedBlockID1 = new Uint32Array(readbackSortedRayBlockIDBuffer1.getMappedRange());
+
+        for (var i = 0; i < numRaysActive; ++i) {
+            var expect = specBlockIDs[i];
+            for (var j = 0; j < numRaysActive; ++j) {
+                if (sortedSpecIDs[j] == expect.spec_id &&
+                    (sortedRayIDs[j] != expect.ray_id ||
+                     sortedBlockID0[j] != expect.block_id ||
+                     sortedBlockID1[j] != expect.block_id)) {
+                    console.log(`Sorted ray ${j}, rayID: ${sortedRayIDs[j]}, specID: ${
+                        sortedSpecIDs[j]}, blockID0: ${sortedBlockID0[j]}, blockID1: ${
+                        sortedBlockID1[j]}`);
+                    console.log(`Expect: rayID: ${expect.ray_id}, specID: ${
+                        expect.spec_id}, blockID: ${expect.block_id}`);
+                    console.log(`Ray ${i} does not match!`);
+                    throw Error("doesn't match!");
+                }
+            }
+        }
+
+        readbackSortedCompactRayIDs.unmap();
+        readbackSortedCompactSpecIDs.unmap();
+        readbackSortedRayBlockIDBuffer0.unmap();
+        readbackSortedRayBlockIDBuffer1.unmap();
+    }
 
     /*
     {
