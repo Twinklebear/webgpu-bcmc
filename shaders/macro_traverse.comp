@@ -81,14 +81,7 @@ void main() {
 
     uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
 
-    if (rays[ray_index].t == FLT_MAX) {
-        if (speculation_count > 1) {
-            for (uint i = 0; i < speculation_count; i++) {
-                block_ids[ray_offsets[ray_index] * speculation_count + i] = UINT_MAX;
-            }
-        } else {
-            block_ids[ray_index] = UINT_MAX;
-        }        
+    if (rays[ray_index].t == FLT_MAX) {  
         return;
     }
 
@@ -202,11 +195,6 @@ void main() {
         grid_iterator_advance(coarse_grid_iter);
     }
 
-    // Use 'UINT_MAX' as a hole filler for extra space at the end and rays
-    // terminated by last raytrace active blocks
-    for (uint i = speculated; i < speculation_count; i++) {
-        block_ids[ray_offsets[ray_index] * speculation_count + i] = UINT_MAX;
-    }
     if (speculated == 0) {
         // If we didn't intersect this ray with any blocks (no speculated rays spawned),
         // then this ray has terminated.
