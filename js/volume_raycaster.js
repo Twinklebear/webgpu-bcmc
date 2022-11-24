@@ -1957,7 +1957,8 @@ VolumeRaycaster.prototype.decompressBlocks =
         ],
     });
 
-    var numChunks = Math.ceil(nBlocksToDecompress / this.maxDispatchSize);
+    var workGroupCount = nBlocksToDecompress / 64;
+    var numChunks = Math.ceil(workGroupCount / this.maxDispatchSize);
     var dispatchChunkOffsetsBuf = this.device.createBuffer({
         size: numChunks * 256,
         usage: GPUBufferUsage.UNIFORM,
@@ -1973,7 +1974,7 @@ VolumeRaycaster.prototype.decompressBlocks =
     // execute all at once and trigger a TDR if we're decompressing a large amount of data
     for (var i = 0; i < numChunks; ++i) {
         var numWorkGroups =
-            Math.min(nBlocksToDecompress - i * this.maxDispatchSize, this.maxDispatchSize);
+            Math.min(workGroupCount - i * this.maxDispatchSize, this.maxDispatchSize);
         var commandEncoder = this.device.createCommandEncoder();
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.decompressBlocksPipeline);
