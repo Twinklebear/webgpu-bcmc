@@ -24,10 +24,14 @@ layout(set = 0, binding = 4, std430) buffer CachedItemSlots
 layout(set = 1, binding = 0) uniform DecompressBlockOffset
 {
     uint start_block_offset;
+    uint total_n_blocks;
 };
 
 void main(void)
 {
+    if (start_block_offset + gl_GlobalInvocationID.x >= total_n_blocks) {
+        return;
+    }
     const uint block_index = block_ids[start_block_offset + gl_GlobalInvocationID.x];
     const uint cache_location = cached_item_slots[block_index];
     BlockReader reader = create_block_reader(block_index);

@@ -1957,7 +1957,7 @@ VolumeRaycaster.prototype.decompressBlocks =
         ],
     });
 
-    var workGroupCount = nBlocksToDecompress / 64;
+    var workGroupCount = Math.ceil(nBlocksToDecompress / 64.0);
     var numChunks = Math.ceil(workGroupCount / this.maxDispatchSize);
     var dispatchChunkOffsetsBuf = this.device.createBuffer({
         size: numChunks * 256,
@@ -1967,6 +1967,7 @@ VolumeRaycaster.prototype.decompressBlocks =
     var map = new Uint32Array(dispatchChunkOffsetsBuf.getMappedRange());
     for (var i = 0; i < numChunks; ++i) {
         map[i * 64] = i * this.maxDispatchSize;
+        map[i * 64 + 1] = nBlocksToDecompress;
     }
     dispatchChunkOffsetsBuf.unmap();
 
@@ -1987,7 +1988,7 @@ VolumeRaycaster.prototype.decompressBlocks =
                     binding: 0,
                     resource: {
                         buffer: dispatchChunkOffsetsBuf,
-                        size: 4,
+                        size: 8,
                         offset: i * 256,
                     },
                 },
