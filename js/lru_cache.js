@@ -626,13 +626,15 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
         // Update available slot IDs w/ a new scan result
         this.slotAvailableScanner = this.scanPipeline.prepareGPUInput(
             this.slotAvailableOffsets, this.scanPipeline.getAlignedSize(newSize));
+
+        await this.device.queue.onSubmittedWorkDone();
         var end = performance.now();
         // console.log(`cache resize took ${end - startGrow}ms`);
 
         var start = performance.now();
         numSlotsAvailable = await this.slotAvailableScanner.scan(newSize);
         var end = performance.now();
-        console.log(`LRU: Scan new cache took ${end - start}ms`);
+        console.log(`LRU: Resize and scan new cache took ${end - startGrow}ms`);
 
         perfTracker.lruGrowCache.push(end - startGrow);
         this.cacheSize = newSize;
