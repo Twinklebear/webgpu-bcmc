@@ -31,7 +31,7 @@ layout(set = 1, binding = 3, std430) buffer BlockInformation
 
 layout(set = 1, binding = 5, std430) buffer BlockRanges
 {
-    BlockRange block_ranges[];
+    vec2 block_ranges[];
 };
 
 layout(set = 1, binding = 6, std430) buffer SpeculativeIDs
@@ -221,26 +221,6 @@ bool marmitt_intersect(const in vec3 vol_eye,
         return true;
     }
     return false;
-}
-
-// TODO: move to load_block.comp later
-// Load the volume block corner values to load its LOD representation
-void load_block_lod(const uint block_id, out float vertex_values[8])
-{
-    const uvec3 block_pos = block_id_to_pos(block_id);
-    const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
-
-    const uvec3 block_dims = compute_block_dims_with_ghost(block_pos);
-
-    for (uint i = 0; i < 8; ++i) {
-        uvec3 neighbor = block_pos + index_to_vertex[i];
-        if (all(lessThan(neighbor, n_blocks))) {
-            uint neighbor_id = compute_block_id(neighbor);
-            vertex_values[i] = block_ranges[neighbor_id].corners[0];
-        } else {
-            vertex_values[i] = block_ranges[block_info.id].corners[i];
-        }
-    }
 }
 
 void main(void)

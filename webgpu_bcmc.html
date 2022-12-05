@@ -28,10 +28,6 @@
                     <input type="checkbox" class="form-check-input" id="enableCache">
                     <label for="enableCache">Enable Cache</label>
                 </div>
-                <div class="form-group col-8">
-                    <label for="lod">LOD Threshold</label>
-                    <input type="range" class="form-control-range" id="lod" min="0" max="64" step="1" value="0">
-                </div>
                 <div class="form-group col-4">
                     <input type="checkbox" class="form-check-input" id="outputImages">
                     <label for="outputImages">Output Images</label>
@@ -42,14 +38,6 @@
                 -->
             </div>
             <div class="row col-12 col-lg-8 text-left mx-auto mb-2">
-                <!--
-                <div class="col-12 row text-left">
-                    <p>
-                        See the <a href="https://www.willusher.io/publications/teraweb">paper</a> for more details,
-                        or checkout the code on <a href="https://github.com/Twinklebear/webgpu-bcmc">Github!</a>
-                    </p>
-                </div>
-                -->
                 <div class="col-12 row text-left">
                     <p id="mcInfo"></p>
                 </div>
@@ -70,9 +58,11 @@
                         <p id="cacheMemDisplay"></p>
                     </div>
                 </div>
+                <!--
                 <div class="col-12 text-left">
                     <p id="camDisplay"></p>
                 </div>
+                -->
 
                 <button href="javascript:void(0);" id="runRandomBenchmark" onclick="runBenchmark('random');"
                     type="button" class="btn btn-primary mr-1">Random Benchmark</button>

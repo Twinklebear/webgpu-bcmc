@@ -53,13 +53,10 @@
     var mcMemDisplay = document.getElementById("mcMemDisplay");
     var cacheMemDisplay = document.getElementById("cacheMemDisplay");
     var fpsDisplay = document.getElementById("fps");
-    var camDisplay = document.getElementById("camDisplay");
+    // var camDisplay = document.getElementById("camDisplay");
 
     var enableCache = document.getElementById("enableCache");
     enableCache.checked = true;
-
-    var LODSlider = document.getElementById("lod");
-    var currentLOD = LODSlider.value;
 
     var isovalueSlider = document.getElementById("isovalue");
     isovalueSlider.min = dataset.range[0];
@@ -71,6 +68,25 @@
     }
     isovalueSlider.value = (dataset.range[0] + dataset.range[1]) / 2.0;
     var currentIsovalue = isovalueSlider.value;
+
+    var displayCacheInfo = function() {
+        var percentActive = (volumeRC.numActiveBlocks / volumeRC.totalBlocks) * 100;
+        cacheInfo.innerHTML = `Cache Space: ${
+      volumeRC.lruCache.cacheSize
+    } blocks
+            (${(
+              (volumeRC.lruCache.cacheSize / volumeRC.totalBlocks) *
+              100
+            ).toFixed(2)} %
+            of ${volumeRC.totalBlocks} total blocks)<br/>
+            # Cache Slots Available ${
+              volumeRC.lruCache.displayNumSlotsAvailable}<br/>
+            <b>For this Pass:</b><br/>
+            # Newly Decompressed: ${volumeRC.newDecompressed}<br/>
+            # Active Blocks: ${volumeRC.numActiveBlocks}
+            (${percentActive.toFixed(2)}%)<br/>`;
+    };
+    displayCacheInfo();
 
     const defaultEye = vec3.set(vec3.create(), 0.0, 0.0, 1.0);
     const center = vec3.set(vec3.create(), 0.0, 0.0, 0.0);
@@ -203,6 +219,7 @@
             cameraChanged = false;
             recomputeSurface = true;
 
+            /*
             var eyePos = camera.eyePos();
             var eyeDir = camera.eyeDir();
             var upDir = camera.upDir();
@@ -215,6 +232,7 @@
                 up = ${upDir[0].toFixed(4)} ${upDir[1].toFixed(
                 4
             )} ${upDir[2].toFixed(4)}`;
+            */
         }
 
         await animationFrame();
@@ -239,7 +257,7 @@
             requestBenchmark = null;
         }
 
-        if (currentBenchmark) {
+        if (currentBenchmark && surfaceDone) {
             if (!currentBenchmark.run()) {
                 currentBenchmark = null;
             }
@@ -249,47 +267,28 @@
             await volumeRC.lruCache.reset();
         }
 
-        if (isovalueSlider.value != currentIsovalue || LODSlider.value != currentLOD ||
-            requestRecompute) {
+        if (isovalueSlider.value != currentIsovalue || requestRecompute) {
             console.log(`Isovalue = ${isovalueSlider.value}`);
             recomputeSurface = true;
             currentIsovalue = parseFloat(isovalueSlider.value);
-            currentLOD = parseInt(LODSlider.value);
-
-            /*
-            perfResults.isovalue.push(currentIsovalue);
-            perfResults.totalTime.push(end - start);
-
-            //displayMCInfo();
-            //displayCacheInfo();
-
-            var memUse = compressedMC.reportMemoryUse();
-            mcMemDisplay.innerHTML = memUse[0];
-            cacheMemDisplay.innerHTML = memUse[1];
-            totalMemDisplay.innerHTML = `Total Memory: ${memUse[2]}`;
-
-            requestRecompute = false;
-            numFrames = 0;
-            totalTimeMS = 0;
-            */
-
-            // TODO: We'll want to only print this after the benchmark run is done
-            /*
-                  console.log(JSON.stringify(perfResults));
-                  for (const prop in perfResults) {
-                      var sum = perfResults[prop].reduce(function(acc, x) { return acc + x; });
-                      console.log(`${prop} average = ${(sum /
-               perfResults[prop].length).toFixed(3)}`);
-                  }
-                  */
         }
 
         if (recomputeSurface || !surfaceDone) {
             var perfTracker = {};
             var start = performance.now();
             surfaceDone = await volumeRC.renderSurface(
-                currentIsovalue, currentLOD, upload, perfTracker, recomputeSurface);
+                currentIsovalue, 1, upload, perfTracker, recomputeSurface);
             var end = performance.now();
+
+            averageComputeTime = Math.round(volumeRC.totalPassTime / volumeRC.numPasses);
+            recomputeSurface = false;
+
+            displayCacheInfo();
+            var memUse = volumeRC.reportMemoryUse();
+            mcMemDisplay.innerHTML = memUse[0];
+            cacheMemDisplay.innerHTML = memUse[1];
+            totalMemDisplay.innerHTML = `Total Memory: ${memUse[2]}`;
+
             if (document.getElementById("outputImages").checked) {
                 var commandEncoder = device.createCommandEncoder();
                 commandEncoder.copyTextureToBuffer(
@@ -314,8 +313,6 @@
                 }, "image/png");
                 imageBuffer.unmap();
             }
-            averageComputeTime = Math.round(volumeRC.totalPassTime / volumeRC.numPasses);
-            recomputeSurface = false;
         }
 
         // Blit the image rendered by the raycaster onto the screen

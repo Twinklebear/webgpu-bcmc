@@ -26,7 +26,8 @@ layout(set = 0, binding = 1, std140) uniform ViewParams
 
 layout(set = 0, binding = 2, std430) buffer BlockRanges
 {
-    BlockRange block_ranges[];
+    // TODO: We don't actually need this here
+    vec2 block_ranges[];
 };
 
 layout(set = 0, binding = 3, std430) buffer RayInformation

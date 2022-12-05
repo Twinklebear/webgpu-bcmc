@@ -9,7 +9,7 @@ layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
 // instead of having the client do a preprocess to compute these ranges
 layout(set = 0, binding = 2, std430) buffer BlockInformation
 {
-    BlockRange block_ranges[];
+    vec2 block_ranges[];
 };
 
 layout(set = 1, binding = 0, std140) uniform BlockIDOffset
@@ -39,7 +39,7 @@ void main(void)
 
     // Value range for a block is its range combined with that of its neighbors to
     // the positive side 
-    vec2 cell_range = block_ranges[block_index].range;
+    vec2 cell_range = block_ranges[block_index];
     for (int k = 0; k < 2; ++k) {
         for (int j = 0; j < 2; ++j) {
             for (int i = 0; i < 2; ++i) {
@@ -52,8 +52,8 @@ void main(void)
                 }
                 // TODO: use fcn
                 const uint neighbor_id = coords.x + n_blocks.x * (coords.y + n_blocks.y * coords.z);
-                cell_range.x = min(block_ranges[neighbor_id].range.x, cell_range.x);
-                cell_range.y = max(block_ranges[neighbor_id].range.y, cell_range.y);
+                cell_range.x = min(block_ranges[neighbor_id].x, cell_range.x);
+                cell_range.y = max(block_ranges[neighbor_id].y, cell_range.y);
             }
         }
     }

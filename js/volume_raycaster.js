@@ -2,19 +2,20 @@ var VolumeRaycaster = function(device, canvas) {
     this.device = device;
     this.scanPipeline = new ExclusiveScanPipeline(device);
     this.streamCompact = new StreamCompact(device);
+    // Number of blocks active for the current pass
     this.numActiveBlocks = 0;
+    // Number of blocks decompressed for the current pass
+    this.newDecompressed = 0;
+
     this.renderComplete = false;
     this.initialRayTimes = [];
     this.initialRayTimeSum = 0;
 
     this.canvas = canvas;
-    console.log(`canvas size ${canvas.width}x${canvas.height}`);
 
     // Max dispatch size for more computationally heavy kernels
     // which might hit TDR on lower power devices
     this.maxDispatchSize = device.limits.maxComputeWorkgroupsPerDimension;
-
-    this.numActiveBlocksStorage = 0;
 
     this.computeBlockRangeBGLayout = device.createBindGroupLayout({
         entries: [
@@ -912,7 +913,6 @@ VolumeRaycaster.prototype.setCompressedVolume =
     new Uint8Array(compressedBuffer.getMappedRange()).set(volume);
     compressedBuffer.unmap();
     this.compressedBuffer = compressedBuffer;
-    this.compressedDataSize = volume.byteLength;
 
     this.uploadIsovalueBuf = this.device.createBuffer({
         size: 4,
@@ -937,6 +937,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
 
     // Scan result buffer for the block ray offsets (computed by scanning the result in
     // blockNumRaysBuffer)
+    // TODO: Can we merge this buffer with something else?
     this.blockRayOffsetBuffer = this.device.createBuffer({
         size: 4 * this.scanPipeline.getAlignedSize(this.totalBlocks),
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
@@ -952,6 +953,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
         size: 4 * this.scanPipeline.getAlignedSize(this.totalBlocks),
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
     });
+    // TODO: this can be active block size dependent
     this.activeBlockIDBuffer = this.device.createBuffer({
         size: 4 * this.totalBlocks,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
@@ -1170,20 +1172,108 @@ VolumeRaycaster.prototype.setCompressedVolume =
     });
 };
 
-VolumeRaycaster.prototype.computeBlockRanges = async function() {
+VolumeRaycaster.prototype.reportMemoryUse =
+    function() {
+    var formatBytes = function(count) {
+        const giga = 1000000000;
+        const mega = 1000000;
+        const kilo = 1000;
+        if (count > giga) {
+            return (count / giga).toFixed(2) + " GB";
+        } else if (count > mega) {
+            return (count / mega).toFixed(2) + " MB";
+        } else if (count > kilo) {
+            return (count / kilo).toFixed(2) + " KB";
+        }
+        return count + " B";
+    };
+
+    // Data from this object
+    var memUse = {
+        mc: {
+            compressedData: this.compressedBuffer.size,
+            // TODO: BlockRangesBuffer will be made a temporary
+            // blockRanges: this.blockRangesBuffer.size,
+            voxelRanges: this.voxelRangesBuffer.size,
+            coarseCellRanges: this.coarseCellRangesBuffer.size,
+
+            // Every app will have view params, we can ignore it
+            // viewParam: this.viewParamBuf.size,
+            rays: this.rayInformationBuffer.size,
+            rayPixelIDs: this.speculativeRayIDBuffer.size,
+            sortedRayIDs: this.rayIDBuffer.size,
+            compactPixelIDs: this.compactSpeculativeIDBuffer.size,
+            rayBlockIDs: this.rayBlockIDBuffer.size,
+            compactRayBlockIDs: this.compactRayBlockIDBuffer.size,
+            rayActive: this.rayActiveBuffer.size,
+            rayActiveCompactOffsets: this.rayActiveCompactOffsetBuffer.size,
+            speculativeRayOffsets: this.speculativeRayOffsetBuffer.size,
+            rayRGBZ: this.rayRGBZBuffer.size,
+
+            gridIteratorState: this.gridIteratorBuffer.size,
+
+            blockActive: this.blockActiveBuffer.size,
+            blockVisible: this.blockVisibleBuffer.size,
+            blockNumRays: this.blockNumRaysBuffer.size,
+            blockRayOffsets: this.blockRayOffsetBuffer.size,
+            blockActiveCompactOffsets: this.blockActiveCompactOffsetBuffer.size,
+            activeBlockIDs: this.activeBlockIDBuffer.size,
+            // Maybe not count this one because it's needed for a limiation of WebGPU's binding
+            // sizes
+            // combinedBlockInformation: this.combinedBlockInformationBuffer.size,
+
+            // I think we can also ignore the cube vertices
+            // cubeVertices: this.dataBuf.size
+        },
+        cache: {
+            cache: this.lruCache.cacheSize * this.lruCache.elementSize,
+            cachedItemSlots: this.lruCache.totalElements * 4,
+            needsCaching: this.lruCache.totalElements * 4,
+            needsCachingOffsets:
+                this.scanPipeline.getAlignedSize(this.lruCache.totalElements) * 4,
+            slotAge: this.lruCache.cacheSize * 4,
+            slotAvailable: this.lruCache.cacheSize * 4,
+            slotAvailableOffsets:
+                this.scanPipeline.getAlignedSize(this.lruCache.cacheSize) * 4,
+            slotAvailableIDs: this.lruCache.cacheSize * 4,
+            slotItemIDs: this.lruCache.cacheSize * 4,
+            cacheSizeBuf: 4,
+        },
+    };
+
+    var totalMem = 0;
+    var rcText = "Raycaster Data:<ul>";
+    for (const prop in memUse.mc) {
+        totalMem += memUse.mc[prop];
+        rcText += "<li>" + prop + ": " + formatBytes(memUse.mc[prop]) + "</li>";
+    }
+    rcText += "</ul>";
+
+    var cacheText = "LRU Cache Data:<ul>";
+    for (const prop in memUse.cache) {
+        totalMem += memUse.cache[prop];
+        cacheText += "<li>" + prop + ": " + formatBytes(memUse.cache[prop]) + "</li>";
+    }
+    cacheText += "</ul>";
+    return [rcText, cacheText, formatBytes(totalMem), memUse];
+}
+
+    VolumeRaycaster.prototype.computeBlockRanges = async function() {
     // Note: this could be done by the server for us, but for this prototype
     // it's a bit easier to just do it here
     // Decompress each block and compute its value range, output to the blockRangesBuffer
+    // BlockRangesBuffer = purely the ZFP block range
+    // TODO: We don't need to keep this buffer long term actually
     this.blockRangesBuffer = this.device.createBuffer({
-        // Why is this 10 4byte vals?
-        // 8 corner values plus 2 range values
-        size: this.totalBlocks * 10 * 4,
+        size: this.totalBlocks * 2 * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
+    // VoxelRangesBuffer = block range + neighbor cells for the dual grid
     this.voxelRangesBuffer = this.device.createBuffer({
         size: this.totalBlocks * 2 * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
+    // CoarseCellRanges = 4^3 blocks of ZFP blocks, including neighbor
     this.coarseCellRangesBuffer = this.device.createBuffer({
         size: this.totalCoarseCells * 2 * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
@@ -1307,6 +1397,7 @@ VolumeRaycaster.prototype.renderSurface =
     console.log("===== Rendering Surface =======");
 
     if (renderParamsChanged) {
+        // TODO: Just output this as JSON and compute sums separately
         this.compactTimes = [];
         this.compactTimeSum = 0;
         this.markTimes = [];
@@ -1317,6 +1408,9 @@ VolumeRaycaster.prototype.renderSurface =
         this.raytraceTimeSum = 0;
         this.decompressTimes = [];
         this.decompressTimeSum = 0;
+
+        this.numActiveBlocks = 0;
+        this.newDecompressed = 0;
 
         this.totalPassTime = 0;
         this.numPasses = 0;
@@ -1399,6 +1493,7 @@ VolumeRaycaster.prototype.renderSurface =
         await this.lruCache.update(this.blockActiveBuffer, perfTracker);
     end = performance.now();
     console.log(`LRU: ${end - start}ms`);
+    this.newDecompressed = nBlocksToDecompress;
     if (nBlocksToDecompress != 0) {
         console.log(`Will decompress ${nBlocksToDecompress} blocks`);
         start = performance.now();
@@ -1414,6 +1509,7 @@ VolumeRaycaster.prototype.renderSurface =
     end = performance.now();
     console.log(`Ray active and offsets: ${end - start}ms`);
     console.log(`numRaysActive = ${numRaysActive}`);
+    this.numActiveBlocks = 0;
     if (numRaysActive > 0) {
         // var commandEncoder = this.device.createCommandEncoder();
 
@@ -1443,6 +1539,7 @@ VolumeRaycaster.prototype.renderSurface =
 
         start = performance.now();
         var numActiveBlocks = await this.sortActiveRaysByBlock(numRaysActive);
+        this.numActiveBlocks = numActiveBlocks;
         end = performance.now();
         console.log(`Sort active rays by block: ${end - start}ms`);
 

@@ -16,11 +16,6 @@ struct RayInfo {
     // So we have two free 4 byte values to use if needed.
 };
 
-struct BlockRange {
-    vec2 range;
-    float corners[8];
-};
-
 struct BlockInfo {
     uint id;
     uint ray_offset;
@@ -40,8 +35,10 @@ struct GridIterator {
 
 // The state we save for saving/restoring the grid iterator state
 struct GridIteratorState {
+    // TODO: store single int for ID
     ivec3 cell;
     vec3 t_max;
+    // TODO: remove t from saved state
     float t;
 };
 
@@ -102,7 +99,8 @@ GridIterator restore_grid_iterator(vec3 ray_org,
 
     grid_iter.cell = state.cell;
     grid_iter.t_max = state.t_max;
-    grid_iter.t = state.t;
+    // We don't really care about this value when restoring
+    grid_iter.t = min(state.t_max.x, min(state.t_max.y, state.t_max.z));
 
     return grid_iter;
 }
