@@ -35,11 +35,8 @@ struct GridIterator {
 
 // The state we save for saving/restoring the grid iterator state
 struct GridIteratorState {
-    // TODO: store single int for ID
-    ivec3 cell;
     vec3 t_max;
-    // TODO: remove t from saved state
-    float t;
+    int cell_id;
 };
 
 bool outside_grid(const vec3 p, const vec3 grid_dims) {
@@ -97,7 +94,9 @@ GridIterator restore_grid_iterator(vec3 ray_org,
     const vec3 inv_ray_dir = 1.0 / ray_dir;
     grid_iter.t_delta = abs(inv_ray_dir);
 
-    grid_iter.cell = state.cell;
+    grid_iter.cell = ivec3(state.cell_id % grid_dims.x,
+                           (state.cell_id / grid_dims.x) % grid_dims.y,
+                           state.cell_id / (grid_dims.x * grid_dims.y));
     grid_iter.t_max = state.t_max;
     // We don't really care about this value when restoring
     grid_iter.t = min(state.t_max.x, min(state.t_max.y, state.t_max.z));
@@ -119,6 +118,10 @@ bool grid_iterator_get_cell(inout GridIterator iter, out vec2 cell_t_range, out 
         return false;
     }
     return true;
+}
+
+int grid_iterator_get_cell_id(in GridIterator iter) {
+    return iter.cell.x + iter.grid_dims.x * (iter.cell.y + iter.grid_dims.y * iter.cell.z);
 }
 
 // Advance the iterator to the next cell in the grid.

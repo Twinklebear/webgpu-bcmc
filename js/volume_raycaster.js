@@ -203,7 +203,7 @@ var VolumeRaycaster = function(device, canvas) {
     // Each ray stores 2 iterator states, the coarse one followed by the fine one.
     // Each state is 32b
     this.gridIteratorBuffer = device.createBuffer({
-        size: this.canvas.width * this.canvas.height * 64,
+        size: this.canvas.width * this.canvas.height * 8 * 4,
         usage: GPUBufferUsage.STORAGE,
     });
 

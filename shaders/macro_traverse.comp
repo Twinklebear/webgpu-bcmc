@@ -178,15 +178,17 @@ void main() {
                 // until we're on the last speculated ray
                 if (speculated == speculation_count) {
                     // Note: grid dims is redundant and an easy one to not store
-                    iterator_state[ray_index * 2].cell = coarse_grid_iter.cell;
+                    //save_grid_iterator(coarse_grid_iter, iterator_state[ray_index * 2]);
+                    //save_grid_iterator(grid_iter, iterator_state[ray_index * 2 + 1]);
+
+                    iterator_state[ray_index * 2].cell_id =
+                        grid_iterator_get_cell_id(coarse_grid_iter);
                     iterator_state[ray_index * 2].t_max = coarse_grid_iter.t_max;
-                    iterator_state[ray_index * 2].t = coarse_grid_iter.t;
                     // Writing it this way seems to result in some invalid code generated
                     // for the SPV -> WGSL step so it fails to compile
-                    //iterator_state[ray_index * 2 + 1] = grid_iter;
-                    iterator_state[ray_index * 2 + 1].cell = grid_iter.cell;
+                    iterator_state[ray_index * 2 + 1].cell_id =
+                        grid_iterator_get_cell_id(grid_iter);
                     iterator_state[ray_index * 2 + 1].t_max = grid_iter.t_max;
-                    iterator_state[ray_index * 2 + 1].t = grid_iter.t;
                     return;
                 }
             }
