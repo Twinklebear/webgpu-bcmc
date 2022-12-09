@@ -196,7 +196,7 @@ var VolumeRaycaster = function(device, canvas) {
     });
 
     this.rayRGBZBuffer = device.createBuffer({
-        size: this.canvas.width * this.canvas.height * 4 * 4,
+        size: this.canvas.width * this.canvas.height * 2 * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
 

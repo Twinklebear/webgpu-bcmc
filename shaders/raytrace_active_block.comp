@@ -39,9 +39,9 @@ layout(set = 1, binding = 6, std430) buffer SpeculativeIDs
     uint spec_ids[];
 };
 
-layout(set = 1, binding = 7, std140) buffer RayRGBZ
+layout(set = 1, binding = 7, std430) buffer RayRGBZ
 {
-    vec4 ray_rgbz[];
+    vec2 ray_rgbz[];
 };
 
 uniform layout(set = 1, binding = 4, rgba8) writeonly image2D render_target;
@@ -304,7 +304,6 @@ void main(void)
 
             // Make sure we actually intersect this brick, can have some glancing edge cases
             if (brick_range.y <= brick_range.x) {
-                //ray_rgbz[spec_index] = vec4(1.0, 0.0, 0.0, -1000.0);
                 continue;
             }
 
@@ -349,7 +348,8 @@ void main(void)
                 // color.xyz = vec3(v000) / block_pos;
                 color.xyz = shading(N, L, V, base_color);
                 // color.xyz = base_color;
-                ray_rgbz[spec_index] = vec4(color.xyz, t_hit);
+                // Pack the ray color
+                ray_rgbz[spec_index] = vec2(intBitsToFloat(pack_color(color.xyz)), t_hit);
             }
             // imageStore(render_target, pixel_coords, color);
         }

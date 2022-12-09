@@ -148,5 +148,24 @@ vec2 intersect_box(vec3 orig, vec3 dir, const vec3 box_min, const vec3 box_max) 
     return vec2(t0, t1);
 }
 
+// Pass a float color in [0,1] to pack
+int pack_color(vec3 rgb) {
+    ivec3 rbg256 = clamp(ivec3(rgb * 255), ivec3(0), ivec3(255));
+    int c = 0;
+    c |= (rbg256.x << 24) & 0xff000000;
+    c |= (rbg256.y << 16) & 0x00ff0000;
+    c |= (rbg256.z << 8) & 0x0000ff00;
+    return c;
+}
+
+// Returns a float color in [0,1]
+vec3 unpack_color(int rgb8) {
+    vec3 rgb = vec3(0);
+    rgb.x = ((rgb8 >> 24) & 0x000000ff) / 255.0;
+    rgb.y = ((rgb8 >> 16) & 0x000000ff) / 255.0;
+    rgb.z = ((rgb8 >> 8) & 0x000000ff) / 255.0;
+    return rgb;
+}
+
 #endif
 

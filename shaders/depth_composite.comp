@@ -19,9 +19,9 @@ layout(set = 0, binding = 1, std430) buffer RayIDs
     uint ray_ids[];
 };
 
-layout(set = 0, binding = 2, std140) buffer RayRGBZ
+layout(set = 0, binding = 2, std430) buffer RayRGBZ
 {
-    vec4 ray_rgbz[];
+    vec2 ray_rgbz[];
 };
 
 uniform layout(set = 0, binding = 3, rgba8) writeonly image2D render_target;
@@ -59,8 +59,10 @@ void main(void)
     ivec2 pixel_coords = ivec2(ray_index % image_width, ray_index / image_width);
     vec4 color = vec4(0, 0, 0, FLT_MAX);
     for (int i = 0; i < speculation_count; i++) {
-        if (ray_rgbz[spec_index + i].a < color.a) {
-            color = ray_rgbz[spec_index + i];
+        if (ray_rgbz[spec_index + i].y < color.w) {
+            // Unpack the ray color
+            color.xyz = unpack_color(floatBitsToInt(ray_rgbz[spec_index + i].x));
+            color.w = ray_rgbz[spec_index + i].y;
         }
     }
     if (color.a != FLT_MAX) {
