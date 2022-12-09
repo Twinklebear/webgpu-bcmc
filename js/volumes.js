@@ -99,6 +99,13 @@ var datasets = {
         scale: [1, 1440 / 1920, 288 / 1920],
         step: 1.0 / 8192,
     },
+    richtmyer_meshkov: {
+        compressionRate: 1,
+        name: "richtmyer_meshkov_2048x2048x1920_uint8.raw.crate1",
+        range: [0, 255],
+        scale: [1, 1, 1920 / 2048],
+        step: 1.0,
+    },
 };
 
 var fileRegex = /(\w+)_(\d+)x(\d+)x(\d+)_(\w+)\.*/;
