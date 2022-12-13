@@ -39,15 +39,52 @@
         alert(`Failed to load compressed data`);
         return;
     }
-
     var imageBuffer = device.createBuffer({
         size: canvas.width * canvas.height * 4,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     });
-    var volumeRC = new VolumeRaycaster(device, canvas);
-    await volumeRC.setCompressedVolume(
+    var resolutionBuffer = device.createBuffer({
+        size: 4,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    var renderBGLayout = device.createBindGroupLayout({
+        entries: [
+            {binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {viewDimension: "2d"}},
+            {binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: {type: "uniform"}},
+        ]
+    });
+
+    var halfResolution = document.getElementById("halfResolution");
+    var width = halfResolution.checked ? canvas.width / 2 : canvas.width;
+    var height = halfResolution.checked ? canvas.height / 2 : canvas.height;
+    this.volumeRC = new VolumeRaycaster(device, width, height);
+    var render = this;
+    halfResolution.onchange = async () => {
+        var width = halfResolution.checked ? canvas.width / 2 : canvas.width;
+        var height = halfResolution.checked ? canvas.height / 2 : canvas.height;
+        render.volumeRC = new VolumeRaycaster(device, width, height);
+        await render.volumeRC.setCompressedVolume(
+            compressedData, dataset.compressionRate, volumeDims, dataset.scale);
+        recomputeSurface = true;
+        var commandEncoder = device.createCommandEncoder();
+        var uploadResolution = device.createBuffer(
+            {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
+        new Uint32Array(uploadResolution.getMappedRange()).set([halfResolution.checked ? 1 : 0]);
+        uploadResolution.unmap();
+        commandEncoder.copyBufferToBuffer(
+            uploadResolution, 0, resolutionBuffer, 0, 4);
+        device.queue.submit([commandEncoder.finish()]);
+        render.renderPipelineBG = device.createBindGroup({
+            layout: renderBGLayout,
+            entries: [
+                {binding: 0, resource: render.volumeRC.renderTarget.createView()}, 
+                {binding: 1, resource: {buffer: resolutionBuffer}},
+            ]
+        });
+    }
+    await this.volumeRC.setCompressedVolume(
         compressedData, dataset.compressionRate, volumeDims, dataset.scale);
-    compressedData = null;
+    // compressedData = null;
 
     var totalMemDisplay = document.getElementById("totalMemDisplay");
     var mcMemDisplay = document.getElementById("mcMemDisplay");
@@ -70,20 +107,20 @@
     var currentIsovalue = isovalueSlider.value;
 
     var displayCacheInfo = function() {
-        var percentActive = (volumeRC.numActiveBlocks / volumeRC.totalBlocks) * 100;
+        var percentActive = (this.volumeRC.numActiveBlocks / this.volumeRC.totalBlocks) * 100;
         cacheInfo.innerHTML = `Cache Space: ${
-      volumeRC.lruCache.cacheSize
+      this.volumeRC.lruCache.cacheSize
     } blocks
             (${(
-              (volumeRC.lruCache.cacheSize / volumeRC.totalBlocks) *
+              (this.volumeRC.lruCache.cacheSize / this.volumeRC.totalBlocks) *
               100
             ).toFixed(2)} %
-            of ${volumeRC.totalBlocks} total blocks)<br/>
+            of ${this.volumeRC.totalBlocks} total blocks)<br/>
             # Cache Slots Available ${
-              volumeRC.lruCache.displayNumSlotsAvailable}<br/>
+              this.volumeRC.lruCache.displayNumSlotsAvailable}<br/>
             <b>For this Pass:</b><br/>
-            # Newly Decompressed: ${volumeRC.newDecompressed}<br/>
-            # Active Blocks: ${volumeRC.numActiveBlocks}
+            # Newly Decompressed: ${this.volumeRC.newDecompressed}<br/>
+            # Active Blocks: ${this.volumeRC.numActiveBlocks}
             (${percentActive.toFixed(2)}%)<br/>`;
     };
     displayCacheInfo();
@@ -165,11 +202,6 @@
     var vertModule = device.createShaderModule({code: display_render_vert_spv});
     var fragModule = device.createShaderModule({code: display_render_frag_spv});
 
-    var renderBGLayout = device.createBindGroupLayout({
-        entries:
-            [{binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {viewDimension: "2d"}}]
-    });
-
     var renderPipeline = device.createRenderPipeline({
         layout: device.createPipelineLayout({bindGroupLayouts: [renderBGLayout]}),
         vertex: {
@@ -180,9 +212,9 @@
             {module: fragModule, entryPoint: "main", targets: [{format: swapChainFormat}]}
     });
 
-    var renderPipelineBG = device.createBindGroup({
+    this.renderPipelineBG = device.createBindGroup({
         layout: renderBGLayout,
-        entries: [{binding: 0, resource: volumeRC.renderTarget.createView()}]
+        entries: [{binding: 0, resource: this.volumeRC.renderTarget.createView()}, {binding: 1, resource: {buffer: resolutionBuffer}}]
     });
 
     var renderPassDesc = {
@@ -243,7 +275,7 @@
                 isovalue: [],
                 totalTime: [],
             };
-            await volumeRC.lruCache.reset();
+            await this.volumeRC.lruCache.reset();
             if (requestBenchmark == "random") {
                 currentBenchmark =
                     new RandomIsovalueBenchmark(isovalueSlider, perfResults, dataset.range);
@@ -264,7 +296,7 @@
         }
 
         if (!enableCache.checked) {
-            await volumeRC.lruCache.reset();
+            await this.volumeRC.lruCache.reset();
         }
 
         if (isovalueSlider.value != currentIsovalue || requestRecompute) {
@@ -276,15 +308,15 @@
         if (recomputeSurface || !surfaceDone) {
             var perfTracker = {};
             var start = performance.now();
-            surfaceDone = await volumeRC.renderSurface(
+            surfaceDone = await this.volumeRC.renderSurface(
                 currentIsovalue, 1, upload, perfTracker, recomputeSurface);
             var end = performance.now();
 
-            averageComputeTime = Math.round(volumeRC.totalPassTime / volumeRC.numPasses);
+            averageComputeTime = Math.round(this.volumeRC.totalPassTime / this.volumeRC.numPasses);
             recomputeSurface = false;
 
             displayCacheInfo();
-            var memUse = volumeRC.reportMemoryUse();
+            var memUse = this.volumeRC.reportMemoryUse();
             mcMemDisplay.innerHTML = memUse[0];
             cacheMemDisplay.innerHTML = memUse[1];
             totalMemDisplay.innerHTML = `Total Memory: ${memUse[2]}`;
@@ -292,7 +324,7 @@
             if (document.getElementById("outputImages").checked) {
                 var commandEncoder = device.createCommandEncoder();
                 commandEncoder.copyTextureToBuffer(
-                    {texture: volumeRC.renderTarget},
+                    {texture: this.volumeRC.renderTarget},
                     {buffer: imageBuffer, bytesPerRow: canvas.width * 4},
                     [canvas.width, canvas.height, 1]);
                 device.queue.submit([commandEncoder.finish()]);
@@ -309,7 +341,7 @@
                 context.putImageData(imgData, 0, 0);
                 outCanvas.toBlob(function(b) {
                     saveAs(b,
-                           `${dataset.name.substring(0, 5)}_pass_${volumeRC.numPasses}.png`);
+                           `${dataset.name.substring(0, 5)}_pass_${this.volumeRC.numPasses}.png`);
                 }, "image/png");
                 imageBuffer.unmap();
             }
@@ -322,7 +354,7 @@
         var renderPass = commandEncoder.beginRenderPass(renderPassDesc);
 
         renderPass.setPipeline(renderPipeline);
-        renderPass.setBindGroup(0, renderPipelineBG);
+        renderPass.setBindGroup(0, this.renderPipelineBG);
         // Draw a full screen quad
         renderPass.draw(6, 1, 0, 0);
         renderPass.end();
@@ -335,7 +367,7 @@
         totalTimeMS += end - start;
         fpsDisplay.innerHTML = `Avg. FPS ${Math.round((1000.0 * numFrames) / totalTimeMS)}<br/>
             Avg. pass time: ${averageComputeTime}ms<br/>
-            Pass # ${volumeRC.numPasses}<br/>
-            Total pipeline time: ${Math.round(volumeRC.totalPassTime)}ms`;
+            Pass # ${this.volumeRC.numPasses}<br/>
+            Total pipeline time: ${Math.round(this.volumeRC.totalPassTime)}ms`;
     }
 })();

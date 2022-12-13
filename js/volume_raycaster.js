@@ -1,4 +1,4 @@
-var VolumeRaycaster = function(device, canvas) {
+var VolumeRaycaster = function(device, width, height) {
     this.device = device;
     this.scanPipeline = new ExclusiveScanPipeline(device);
     this.streamCompact = new StreamCompact(device);
@@ -11,7 +11,8 @@ var VolumeRaycaster = function(device, canvas) {
     this.initialRayTimes = [];
     this.initialRayTimeSum = 0;
 
-    this.canvas = canvas;
+    this.width = width;
+    this.height = height;
 
     // Max dispatch size for more computationally heavy kernels
     // which might hit TDR on lower power devices
@@ -181,29 +182,29 @@ var VolumeRaycaster = function(device, canvas) {
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
 
-    // We'll need a max of canvas.width * canvas.height RayInfo structs in the buffer,
+    // We'll need a max of width * height RayInfo structs in the buffer,
     // so just allocate it once up front
     this.rayInformationBuffer = device.createBuffer({
-        size: this.canvas.width * this.canvas.height * 16,
+        size: this.width * this.height * 16,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
 
-    // We need canvas.width * canvas.height RayIDs for speculation,
+    // We need width * height RayIDs for speculation,
     // with ray indices repeated as speculation occurs
     this.speculativeRayIDBuffer = device.createBuffer({
-        size: this.canvas.width * this.canvas.height * 4,
+        size: this.width * this.height * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
 
     this.rayRGBZBuffer = device.createBuffer({
-        size: this.canvas.width * this.canvas.height * 2 * 4,
+        size: this.width * this.height * 2 * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
 
     // Each ray stores 2 iterator states, the coarse one followed by the fine one.
     // Each state is 32b
     this.gridIteratorBuffer = device.createBuffer({
-        size: this.canvas.width * this.canvas.height * 8 * 4,
+        size: this.width * this.height * 8 * 4,
         usage: GPUBufferUsage.STORAGE,
     });
 
@@ -302,7 +303,7 @@ var VolumeRaycaster = function(device, canvas) {
     // Setup render outputs
     var renderTargetFormat = "rgba8unorm";
     this.renderTarget = this.device.createTexture({
-        size: [this.canvas.width, this.canvas.height, 1],
+        size: [this.width, this.height, 1],
         format: renderTargetFormat,
         usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING |
                    GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
@@ -599,41 +600,41 @@ var VolumeRaycaster = function(device, canvas) {
     // Intermediate buffers for sorting ray IDs using their block ID as the key
     this.radixSorter = new RadixSorter(device);
     this.rayIDBuffer = device.createBuffer({
-        size: this.radixSorter.getAlignedSize(this.canvas.width * this.canvas.height) * 4,
+        size: this.radixSorter.getAlignedSize(this.width * this.height) * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
     this.compactSpeculativeIDBuffer = device.createBuffer({
-        size: this.radixSorter.getAlignedSize(this.canvas.width * this.canvas.height) * 4,
+        size: this.radixSorter.getAlignedSize(this.width * this.height) * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
     this.rayBlockIDBuffer = device.createBuffer({
-        size: this.radixSorter.getAlignedSize(this.canvas.width * this.canvas.height) * 4,
+        size: this.radixSorter.getAlignedSize(this.width * this.height) * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
     this.compactRayBlockIDBuffer = device.createBuffer({
-        size: this.radixSorter.getAlignedSize(this.canvas.width * this.canvas.height) * 4,
+        size: this.radixSorter.getAlignedSize(this.width * this.height) * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
 
     this.rayActiveBuffer = device.createBuffer({
-        size: this.canvas.width * this.canvas.height * 4,
+        size: this.width * this.height * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
 
     this.rayActiveCompactOffsetBuffer = device.createBuffer({
-        size: this.scanPipeline.getAlignedSize(this.canvas.width * this.canvas.height) * 4,
+        size: this.scanPipeline.getAlignedSize(this.width * this.height) * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
     this.speculativeRayOffsetBuffer = device.createBuffer({
-        size: this.scanPipeline.getAlignedSize(this.canvas.width * this.canvas.height) * 4,
+        size: this.scanPipeline.getAlignedSize(this.width * this.height) * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
     this.scanRayActive = this.scanPipeline.prepareGPUInput(
         this.rayActiveCompactOffsetBuffer,
-        this.scanPipeline.getAlignedSize(this.canvas.width * this.canvas.height));
+        this.scanPipeline.getAlignedSize(this.width * this.height));
     this.scanRayAfterActive = this.scanPipeline.prepareGPUInput(
         this.speculativeRayOffsetBuffer,
-        this.scanPipeline.getAlignedSize(this.canvas.width * this.canvas.height));
+        this.scanPipeline.getAlignedSize(this.width * this.height));
 
     this.writeRayAndBlockIDBGLayout = device.createBindGroupLayout({
         entries: [
@@ -898,7 +899,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
         buf.set(volumeDims);
         buf.set(this.paddedDims, 4);
         buf.set([maxBits], 12);
-        buf.set([this.canvas.width], 14);
+        buf.set([this.width], 14);
 
         var buf = new Float32Array(mapping);
         buf.set(volumeScale, 8);
@@ -1516,7 +1517,7 @@ VolumeRaycaster.prototype.renderSurface =
         // var pass = commandEncoder.beginComputePass();
         // pass.setPipeline(this.initSpeculativeIDsPipeline);
         // pass.setBindGroup(0, this.initSpeculativeIDsBG);
-        // pass.dispatchWorkgroups(Math.ceil(this.canvas.width), this.canvas.height, 1);
+        // pass.dispatchWorkgroups(Math.ceil(this.width), this.height, 1);
         // pass.end();
 
         // this.device.queue.submit([commandEncoder.finish()]);
@@ -1557,8 +1558,8 @@ VolumeRaycaster.prototype.renderSurface =
         pass.setPipeline(this.depthCompositePipeline);
         pass.setBindGroup(0, this.depthCompositeBG);
         pass.setBindGroup(1, this.depthCompositeBG1);
-        pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 32),
-                                Math.ceil(this.canvas.height / this.speculationCount),
+        pass.dispatchWorkgroups(Math.ceil(this.width / 32),
+                                Math.ceil(this.height / this.speculationCount),
                                 1);
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
@@ -1568,23 +1569,23 @@ VolumeRaycaster.prototype.renderSurface =
         var pass = commandEncoder.beginComputePass();
         pass.setPipeline(this.markRayActivePipeline);
         pass.setBindGroup(0, this.markRayActiveBG);
-        pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 32), this.canvas.height, 1);
+        pass.dispatchWorkgroups(Math.ceil(this.width / 32), this.height, 1);
         pass.end();
         // We scan the speculativeRayOffsetBuffer, so copy the ray active information over
         commandEncoder.copyBufferToBuffer(this.rayActiveBuffer,
                                           0,
                                           this.speculativeRayOffsetBuffer,
                                           0,
-                                          this.canvas.width * this.canvas.height * 4);
+                                          this.width * this.height * 4);
         this.device.queue.submit([commandEncoder.finish()]);
 
         numRaysActive =
-            await this.scanRayAfterActive.scan(this.canvas.width * this.canvas.height);
+            await this.scanRayAfterActive.scan(this.width * this.height);
         console.log(`num rays active after raytracing: ${numRaysActive}`);
 
         var commandEncoder = this.device.createCommandEncoder();
         this.speculationCount =
-            Math.min(Math.floor(this.canvas.width * this.canvas.height / numRaysActive), 64);
+            Math.min(Math.floor(this.width * this.height / numRaysActive), 64);
         console.log(`Next pass speculation count is ${this.speculationCount}`);
         var uploadSpeculationCount = this.device.createBuffer(
             {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
@@ -1634,7 +1635,7 @@ VolumeRaycaster.prototype.computeInitialRays = async function(viewParamUpload) {
     var resetRaysPass = commandEncoder.beginComputePass(this.resetRaysPipeline);
     resetRaysPass.setBindGroup(0, this.resetRaysBG);
     resetRaysPass.setPipeline(this.resetRaysPipeline);
-    resetRaysPass.dispatchWorkgroups(Math.ceil(this.canvas.width / 8), this.canvas.height, 1);
+    resetRaysPass.dispatchWorkgroups(Math.ceil(this.width / 8), this.height, 1);
     resetRaysPass.end();
 
     var initialRaysPass = commandEncoder.beginRenderPass(this.initialRaysPassDesc);
@@ -1662,7 +1663,7 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     resetSpecIDsPass.setBindGroup(0, this.resetSpeculativeIDsBG);
     resetSpecIDsPass.setPipeline(this.resetSpeculativeIDsPipeline);
     resetSpecIDsPass.dispatchWorkgroups(
-        Math.ceil(this.canvas.width / 32), this.canvas.height, 1);
+        Math.ceil(this.width / 32), this.height, 1);
     resetSpecIDsPass.end();
 
     // Update the current pass index
@@ -1680,7 +1681,7 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     pass.setPipeline(this.macroTraversePipeline);
     pass.setBindGroup(0, this.macroTraverseBindGroup);
     pass.setBindGroup(1, this.macroTraverseRangesBG);
-    pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 64), this.canvas.height, 1);
+    pass.dispatchWorkgroups(Math.ceil(this.width / 64), this.height, 1);
 
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
@@ -1720,7 +1721,7 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
     pass.setPipeline(this.markBlockActivePipeline);
     pass.setBindGroup(0, this.markBlockActiveBG);
     pass.setBindGroup(1, this.renderTargetDebugBG);
-    pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 8), this.canvas.height, 1);
+    pass.dispatchWorkgroups(Math.ceil(this.width / 8), this.height, 1);
 
     pass.end();
 
@@ -1790,7 +1791,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     var pass = commandEncoder.beginComputePass()
     pass.setPipeline(this.writeRayAndBlockIDPipeline);
     pass.setBindGroup(0, this.writeRayAndBlockIDBG);
-    pass.dispatchWorkgroups(Math.ceil(this.canvas.width / 8), this.canvas.height, 1);
+    pass.dispatchWorkgroups(Math.ceil(this.width / 8), this.height, 1);
     pass.end();
 
     // We scan the rayActiveCompactOffsetBuffer, so copy the ray active information over
@@ -1798,7 +1799,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
                                       0,
                                       this.rayActiveCompactOffsetBuffer,
                                       0,
-                                      this.canvas.width * this.canvas.height * 4);
+                                      this.width * this.height * 4);
 
     // We also scan the active block buffer to produce offsets for compacting active block IDs
     // down This will let us reduce the dispatch size of the ray tracing step to just active
@@ -1813,25 +1814,25 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
     // Scan the active ray buffer and compact the active ray IDs before we sort
     // so that the sort doesn't have to process such a large number of items
     // TODO: This is not matching numRaysActive?
-    var nactive = await this.scanRayActive.scan(this.canvas.width * this.canvas.height);
+    var nactive = await this.scanRayActive.scan(this.width * this.height);
     // Should match numRaysActive, sanity check here
     if (numRaysActive != nactive) {
         console.log(`nactive ${nactive} doesn't match numRaysActive ${numRaysActive}!?`);
     }
     var startCompacts = performance.now();
     // Compact the active ray IDs and their block IDs down
-    await this.streamCompact.compactActive(this.canvas.width * this.canvas.height,
+    await this.streamCompact.compactActive(this.width * this.height,
                                            this.rayActiveBuffer,
                                            this.rayActiveCompactOffsetBuffer,
                                            this.speculativeRayIDBuffer,
                                            this.rayIDBuffer);
 
-    await this.streamCompact.compactActiveIDs(this.canvas.width * this.canvas.height,
+    await this.streamCompact.compactActiveIDs(this.width * this.height,
                                               this.rayActiveBuffer,
                                               this.rayActiveCompactOffsetBuffer,
                                               this.compactSpeculativeIDBuffer);
 
-    await this.streamCompact.compactActive(this.canvas.width * this.canvas.height,
+    await this.streamCompact.compactActive(this.width * this.height,
                                            this.rayActiveBuffer,
                                            this.rayActiveCompactOffsetBuffer,
                                            this.rayBlockIDBuffer,
@@ -1881,7 +1882,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
         });
         var debugReadbackRayInformation = this.device.createBuffer({
-            size: this.canvas.width * this.canvas.height * 32,
+            size: this.width * this.height * 32,
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
         });
 
@@ -1894,7 +1895,7 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
                                           0,
                                           debugReadbackRayInformation,
                                           0,
-                                          this.canvas.width * this.canvas.height * 32);
+                                          this.width * this.height * 32);
         await this.device.queue.submit([commandEncoder.finish()]);
 
         await debugReadbackBlock.mapAsync(GPUMapMode.READ);
