@@ -113,7 +113,7 @@
     var currentIsovalue = isovalueSlider.value;
 
     var displayCacheInfo = function() {
-        var percentActive = (this.volumeRC.numActiveBlocks / this.volumeRC.totalBlocks) * 100;
+        var percentActive = (this.volumeRC.numVisibleBlocks / this.volumeRC.totalBlocks) * 100;
         cacheInfo.innerHTML = `Cache Space: ${
       this.volumeRC.lruCache.cacheSize
     } blocks
@@ -126,7 +126,7 @@
               this.volumeRC.lruCache.displayNumSlotsAvailable}<br/>
             <b>For this Pass:</b><br/>
             # Newly Decompressed: ${this.volumeRC.newDecompressed}<br/>
-            # Active Blocks: ${this.volumeRC.numActiveBlocks}
+            # Visible Blocks: ${this.volumeRC.numVisibleBlocks}
             (${percentActive.toFixed(2)}%)<br/>`;
     };
     displayCacheInfo();
