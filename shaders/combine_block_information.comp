@@ -47,11 +47,9 @@ void main(void)
     // This data is compacted down as it's run on the compacted block ids
     const uint id = block_ids[item_idx];
     blocks[item_idx].id = id;
-    blocks[item_idx].ray_offset = block_ray_offsets[id];
-    blocks[item_idx].num_rays = block_num_rays[id];
-    // If the block is running in this pipeline it must be visible,
-    // so if it's not active, then it's an LOD block
-    // TODO: remove LOD
+    blocks[item_idx].ray_offset = block_ray_offsets[item_idx];
+    blocks[item_idx].num_rays = block_num_rays[item_idx];
+    // We don't do LOD, just set to 0
     blocks[item_idx].lod = 0;
 }
 

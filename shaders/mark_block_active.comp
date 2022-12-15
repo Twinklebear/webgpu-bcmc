@@ -33,12 +33,6 @@ layout(set = 0, binding = 3, std430) buffer BlockActive
     uint block_active[];
 };
 
-layout(set = 0, binding = 4, std430) buffer BlockNumRays
-{
-    // # of rays per-block, must increment atomicly!
-    uint block_num_rays[];
-};
-
 layout(set = 0, binding = 5, std430) buffer RayInformation
 {
     RayInfo rays[];

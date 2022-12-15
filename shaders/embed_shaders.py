@@ -85,7 +85,8 @@ for shader in shaders:
 
 # TODO: Read and append hand port of mark_block_active.comp to embed the WGSL shader
 manual_wgsl_shaders = [
-    "mark_block_active.wgsl"
+    "mark_block_active.wgsl",
+    "count_block_rays.wgsl"
 ]
 # TODO: Would also need to do a find/replace for the defines if we manually port any
 # shaders that use BLOCK_SIZE or SORT_CHUNK_SIZE but I don't think it'll be needed
