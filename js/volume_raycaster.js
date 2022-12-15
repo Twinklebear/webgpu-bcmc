@@ -444,17 +444,17 @@ var VolumeRaycaster = function(device, width, height) {
                 }
             },
             {
+                // Also pass the render target for debugging
                 binding: 3,
+                visibility: GPUShaderStage.COMPUTE,
+                storageTexture: {access: "write-only", format: renderTargetFormat}
+            },
+            {
+                binding: 4,
                 visibility: GPUShaderStage.COMPUTE,
                 buffer: {
                     type: "storage",
                 }
-            },
-            {
-                // Also pass the render target for debugging
-                binding: 4,
-                visibility: GPUShaderStage.COMPUTE,
-                storageTexture: {access: "write-only", format: renderTargetFormat}
             },
             {
                 binding: 5,
@@ -472,13 +472,6 @@ var VolumeRaycaster = function(device, width, height) {
             },
             {
                 binding: 7,
-                visibility: GPUShaderStage.COMPUTE,
-                buffer: {
-                    type: "storage",
-                }
-            },
-            {
-                binding: 8,
                 visibility: GPUShaderStage.COMPUTE,
                 buffer: {
                     type: "storage",
@@ -827,13 +820,6 @@ var VolumeRaycaster = function(device, width, height) {
                     type: "storage",
                 }
             },
-            {
-                binding: 7,
-                visibility: GPUShaderStage.COMPUTE,
-                buffer: {
-                    type: "storage",
-                }
-            },
         ]
     });
 
@@ -954,11 +940,6 @@ VolumeRaycaster.prototype.setCompressedVolume =
         size: 4 * this.scanPipeline.getAlignedSize(this.totalBlocks),
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
     });
-    // TODO: this can be active block size dependent
-    this.activeBlockIDBuffer = this.device.createBuffer({
-        size: 4 * this.totalBlocks,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
-    });
 
     this.scanBlockActiveOffsets =
         this.scanPipeline.prepareGPUInput(this.blockActiveCompactOffsetBuffer,
@@ -1059,36 +1040,30 @@ VolumeRaycaster.prototype.setCompressedVolume =
             {
                 binding: 2,
                 resource: {
-                    buffer: this.blockRangesBuffer,
-                },
-            },
-            {
-                binding: 3,
-                resource: {
                     buffer: this.rayInformationBuffer,
                 },
             },
-            {binding: 4, resource: this.renderTarget.createView()},
+            {binding: 3, resource: this.renderTarget.createView()},
             {
-                binding: 5,
+                binding: 4,
                 resource: {
                     buffer: this.gridIteratorBuffer,
                 },
             },
             {
-                binding: 6,
+                binding: 5,
                 resource: {
                     buffer: this.speculativeRayIDBuffer,
                 },
             },
             {
-                binding: 7,
+                binding: 6,
                 resource: {
                     buffer: this.speculativeRayOffsetBuffer,
                 },
             },
             {
-                binding: 8,
+                binding: 7,
                 resource: {
                     buffer: this.rayBlockIDBuffer,
                 }
@@ -1143,34 +1118,6 @@ VolumeRaycaster.prototype.setCompressedVolume =
             {binding: 2, resource: {buffer: this.rayActiveBuffer}},
         ]
     });
-
-    this.combinedBlockInformationBuffer = this.device.createBuffer(
-        {size: this.totalBlocks * 4 * 4, usage: GPUBufferUsage.STORAGE});
-
-    this.combineBlockInformationBG = this.device.createBindGroup({
-        layout: this.combineBlockInformationBGLayout,
-        entries: [
-            {binding: 0, resource: {buffer: this.combinedBlockInformationBuffer}},
-            {binding: 1, resource: {buffer: this.activeBlockIDBuffer}},
-            {binding: 2, resource: {buffer: this.blockRayOffsetBuffer}},
-            {binding: 3, resource: {buffer: this.blockNumRaysBuffer}},
-            {binding: 4, resource: {buffer: this.blockActiveBuffer}},
-        ]
-    });
-
-    this.rtBlocksPipelineBG1 = this.device.createBindGroup({
-        layout: this.rtBlocksPipelineBG1Layout,
-        entries: [
-            {binding: 0, resource: {buffer: this.viewParamBuf}},
-            {binding: 1, resource: {buffer: this.rayInformationBuffer}},
-            {binding: 2, resource: {buffer: this.rayIDBuffer}},
-            {binding: 3, resource: {buffer: this.combinedBlockInformationBuffer}},
-            {binding: 4, resource: this.renderTarget.createView()},
-            {binding: 5, resource: {buffer: this.blockRangesBuffer}},
-            {binding: 6, resource: {buffer: this.compactSpeculativeIDBuffer}},
-            {binding: 7, resource: {buffer: this.rayRGBZBuffer}},
-        ]
-    });
 };
 
 VolumeRaycaster.prototype.reportMemoryUse =
@@ -1193,8 +1140,6 @@ VolumeRaycaster.prototype.reportMemoryUse =
     var memUse = {
         mc: {
             compressedData: this.compressedBuffer.size,
-            // TODO: BlockRangesBuffer will be made a temporary
-            // blockRanges: this.blockRangesBuffer.size,
             voxelRanges: this.voxelRangesBuffer.size,
             coarseCellRanges: this.coarseCellRangesBuffer.size,
 
@@ -1219,8 +1164,11 @@ VolumeRaycaster.prototype.reportMemoryUse =
             blockRayOffsets: this.blockRayOffsetBuffer.size,
             blockActiveCompactOffsets: this.blockActiveCompactOffsetBuffer.size,
             activeBlockIDs: this.activeBlockIDBuffer.size,
-            // Maybe not count this one because it's needed for a limiation of WebGPU's binding
-            // sizes
+
+            // Ignoring the combined block info buffer since this came from a binding count
+            // limitation in WebGPU which I think has been addressed, we just haven't updated
+            // the code, and it's just # active block size
+
             // combinedBlockInformation: this.combinedBlockInformationBuffer.size,
 
             // I think we can also ignore the cube vertices
@@ -1265,7 +1213,7 @@ VolumeRaycaster.prototype.reportMemoryUse =
     // Decompress each block and compute its value range, output to the blockRangesBuffer
     // BlockRangesBuffer = purely the ZFP block range
     // TODO: We don't need to keep this buffer long term actually
-    this.blockRangesBuffer = this.device.createBuffer({
+    var blockRangesBuffer = this.device.createBuffer({
         size: this.totalBlocks * 2 * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
@@ -1298,7 +1246,7 @@ VolumeRaycaster.prototype.reportMemoryUse =
             {
                 binding: 2,
                 resource: {
-                    buffer: this.blockRangesBuffer,
+                    buffer: blockRangesBuffer,
                 }
             }
         ]
@@ -1558,9 +1506,8 @@ VolumeRaycaster.prototype.renderSurface =
         pass.setPipeline(this.depthCompositePipeline);
         pass.setBindGroup(0, this.depthCompositeBG);
         pass.setBindGroup(1, this.depthCompositeBG1);
-        pass.dispatchWorkgroups(Math.ceil(this.width / 32),
-                                Math.ceil(this.height / this.speculationCount),
-                                1);
+        pass.dispatchWorkgroups(
+            Math.ceil(this.width / 32), Math.ceil(this.height / this.speculationCount), 1);
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();
@@ -1579,8 +1526,7 @@ VolumeRaycaster.prototype.renderSurface =
                                           this.width * this.height * 4);
         this.device.queue.submit([commandEncoder.finish()]);
 
-        numRaysActive =
-            await this.scanRayAfterActive.scan(this.width * this.height);
+        numRaysActive = await this.scanRayAfterActive.scan(this.width * this.height);
         console.log(`num rays active after raytracing: ${numRaysActive}`);
 
         var commandEncoder = this.device.createCommandEncoder();
@@ -1662,8 +1608,7 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     var resetSpecIDsPass = commandEncoder.beginComputePass();
     resetSpecIDsPass.setBindGroup(0, this.resetSpeculativeIDsBG);
     resetSpecIDsPass.setPipeline(this.resetSpeculativeIDsPipeline);
-    resetSpecIDsPass.dispatchWorkgroups(
-        Math.ceil(this.width / 32), this.height, 1);
+    resetSpecIDsPass.dispatchWorkgroups(Math.ceil(this.width / 32), this.height, 1);
     resetSpecIDsPass.end();
 
     // Update the current pass index
@@ -1838,8 +1783,21 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
                                            this.rayBlockIDBuffer,
                                            this.compactRayBlockIDBuffer);
 
-    // Compact the active block IDs down as well
+    // Compact the visible block IDs down as well
+    // this actually gives us the # of visible blocks, although it's named poorly as # active
+    // blocks
     var numActiveBlocks = await this.scanBlockActiveOffsets.scan(this.totalBlocks);
+
+    this.newActiveBlockIDBuffer = false;
+    if (!this.activeBlockIDBuffer || this.activeBlockIDBuffer.size < 4 * numActiveBlocks) {
+        this.activeBlockIDBuffer = this.device.createBuffer({
+            size: 4 * numActiveBlocks,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST
+        });
+
+        this.newActiveBlockIDBuffer = true;
+    }
+
     await this.streamCompact.compactActiveIDs(this.totalBlocks,
                                               this.blockVisibleBuffer,
                                               this.blockActiveCompactOffsetBuffer,
@@ -1961,6 +1919,40 @@ VolumeRaycaster.prototype.raytraceVisibleBlocks = async function(numActiveBlocks
             {binding: 2, resource: {buffer: this.lruCache.cachedItemSlots}},
         ]
     });
+
+    var newCombinedBlockIDBuffer = false;
+    if (!this.combinedBlockInformationBuffer ||
+        this.combinedBlockInformationBuffer.size < numActiveBlocks * 4 * 4) {
+        newCombinedBlockIDBuffer = true;
+        this.combinedBlockInformationBuffer = this.device.createBuffer(
+            {size: numActiveBlocks * 4 * 4, usage: GPUBufferUsage.STORAGE});
+
+        this.rtBlocksPipelineBG1 = this.device.createBindGroup({
+            layout: this.rtBlocksPipelineBG1Layout,
+            entries: [
+                {binding: 0, resource: {buffer: this.viewParamBuf}},
+                {binding: 1, resource: {buffer: this.rayInformationBuffer}},
+                {binding: 2, resource: {buffer: this.rayIDBuffer}},
+                {binding: 3, resource: {buffer: this.combinedBlockInformationBuffer}},
+                {binding: 4, resource: this.renderTarget.createView()},
+                {binding: 5, resource: {buffer: this.compactSpeculativeIDBuffer}},
+                {binding: 6, resource: {buffer: this.rayRGBZBuffer}},
+            ]
+        });
+    }
+
+    if (newCombinedBlockIDBuffer || this.newActiveBlockIDBuffer) {
+        this.combineBlockInformationBG = this.device.createBindGroup({
+            layout: this.combineBlockInformationBGLayout,
+            entries: [
+                {binding: 0, resource: {buffer: this.combinedBlockInformationBuffer}},
+                {binding: 1, resource: {buffer: this.activeBlockIDBuffer}},
+                {binding: 2, resource: {buffer: this.blockRayOffsetBuffer}},
+                {binding: 3, resource: {buffer: this.blockNumRaysBuffer}},
+                {binding: 4, resource: {buffer: this.blockActiveBuffer}},
+            ]
+        });
+    }
 
     var commandEncoder = this.device.createCommandEncoder();
     {

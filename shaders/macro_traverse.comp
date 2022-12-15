@@ -24,41 +24,35 @@ layout(set = 0, binding = 1, std140) uniform ViewParams
     uint speculation_count;
 };
 
-layout(set = 0, binding = 2, std430) buffer BlockRanges
-{
-    // TODO: We don't actually need this here
-    vec2 block_ranges[];
-};
-
-layout(set = 0, binding = 3, std430) buffer RayInformation
+layout(set = 0, binding = 2, std430) buffer RayInformation
 {
     RayInfo rays[];
 };
 
-layout(set = 0, binding = 5, std430) buffer GridIterState
+layout(set = 0, binding = 4, std430) buffer GridIterState
 {
     // Each ray stores 2 iterator states, the coarse one followed by the fine one.
     GridIteratorState iterator_state[];
 };
 
 // speculativeRayIDBuffer
-layout(set = 0, binding = 6, std430) buffer RayIDs
+layout(set = 0, binding = 5, std430) buffer RayIDs
 {
     uint ray_ids[];
 };
 
 // speculativeRayOffsetBuffer
-layout(set = 0, binding = 7, std430) buffer RayOffsets
+layout(set = 0, binding = 6, std430) buffer RayOffsets
 {
     uint ray_offsets[];
 };
 
-layout(set = 0, binding = 8, std430) buffer RayBlockIDs
+layout(set = 0, binding = 7, std430) buffer RayBlockIDs
 {
     uint block_ids[];
 };
 
-uniform layout(set = 0, binding = 4, rgba8) writeonly image2D render_target;
+uniform layout(set = 0, binding = 3, rgba8) writeonly image2D render_target;
 
 layout(set = 1, binding = 0, std430) buffer VoxelInformation
 {
