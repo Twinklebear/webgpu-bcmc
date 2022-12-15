@@ -51,7 +51,12 @@
         entries: [
             {binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {viewDimension: "2d"}},
             {binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: {type: "uniform"}},
+            {binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {type: "filtering"}}
         ]
+    });
+    const sampler = device.createSampler({
+        magFilter: 'linear',
+        minFilter: 'linear',
     });
 
     var halfResolution = document.getElementById("halfResolution");
@@ -79,6 +84,7 @@
             entries: [
                 {binding: 0, resource: render.volumeRC.renderTarget.createView()}, 
                 {binding: 1, resource: {buffer: resolutionBuffer}},
+                {binding: 2, resource: sampler}
             ]
         });
     }
@@ -214,7 +220,11 @@
 
     this.renderPipelineBG = device.createBindGroup({
         layout: renderBGLayout,
-        entries: [{binding: 0, resource: this.volumeRC.renderTarget.createView()}, {binding: 1, resource: {buffer: resolutionBuffer}}]
+        entries: [
+            {binding: 0, resource: this.volumeRC.renderTarget.createView()}, 
+            {binding: 1, resource: {buffer: resolutionBuffer}},
+            {binding: 2, resource: sampler}
+        ]
     });
 
     var renderPassDesc = {
