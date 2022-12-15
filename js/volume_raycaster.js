@@ -444,17 +444,17 @@ var VolumeRaycaster = function(device, width, height) {
                 }
             },
             {
+                // Also pass the render target for debugging
                 binding: 3,
+                visibility: GPUShaderStage.COMPUTE,
+                storageTexture: {access: "write-only", format: renderTargetFormat}
+            },
+            {
+                binding: 4,
                 visibility: GPUShaderStage.COMPUTE,
                 buffer: {
                     type: "storage",
                 }
-            },
-            {
-                // Also pass the render target for debugging
-                binding: 4,
-                visibility: GPUShaderStage.COMPUTE,
-                storageTexture: {access: "write-only", format: renderTargetFormat}
             },
             {
                 binding: 5,
@@ -472,13 +472,6 @@ var VolumeRaycaster = function(device, width, height) {
             },
             {
                 binding: 7,
-                visibility: GPUShaderStage.COMPUTE,
-                buffer: {
-                    type: "storage",
-                }
-            },
-            {
-                binding: 8,
                 visibility: GPUShaderStage.COMPUTE,
                 buffer: {
                     type: "storage",
@@ -827,13 +820,6 @@ var VolumeRaycaster = function(device, width, height) {
                     type: "storage",
                 }
             },
-            {
-                binding: 7,
-                visibility: GPUShaderStage.COMPUTE,
-                buffer: {
-                    type: "storage",
-                }
-            },
         ]
     });
 
@@ -1059,36 +1045,30 @@ VolumeRaycaster.prototype.setCompressedVolume =
             {
                 binding: 2,
                 resource: {
-                    buffer: this.blockRangesBuffer,
-                },
-            },
-            {
-                binding: 3,
-                resource: {
                     buffer: this.rayInformationBuffer,
                 },
             },
-            {binding: 4, resource: this.renderTarget.createView()},
+            {binding: 3, resource: this.renderTarget.createView()},
             {
-                binding: 5,
+                binding: 4,
                 resource: {
                     buffer: this.gridIteratorBuffer,
                 },
             },
             {
-                binding: 6,
+                binding: 5,
                 resource: {
                     buffer: this.speculativeRayIDBuffer,
                 },
             },
             {
-                binding: 7,
+                binding: 6,
                 resource: {
                     buffer: this.speculativeRayOffsetBuffer,
                 },
             },
             {
-                binding: 8,
+                binding: 7,
                 resource: {
                     buffer: this.rayBlockIDBuffer,
                 }
@@ -1166,9 +1146,8 @@ VolumeRaycaster.prototype.setCompressedVolume =
             {binding: 2, resource: {buffer: this.rayIDBuffer}},
             {binding: 3, resource: {buffer: this.combinedBlockInformationBuffer}},
             {binding: 4, resource: this.renderTarget.createView()},
-            {binding: 5, resource: {buffer: this.blockRangesBuffer}},
-            {binding: 6, resource: {buffer: this.compactSpeculativeIDBuffer}},
-            {binding: 7, resource: {buffer: this.rayRGBZBuffer}},
+            {binding: 5, resource: {buffer: this.compactSpeculativeIDBuffer}},
+            {binding: 6, resource: {buffer: this.rayRGBZBuffer}},
         ]
     });
 };
@@ -1193,8 +1172,6 @@ VolumeRaycaster.prototype.reportMemoryUse =
     var memUse = {
         mc: {
             compressedData: this.compressedBuffer.size,
-            // TODO: BlockRangesBuffer will be made a temporary
-            // blockRanges: this.blockRangesBuffer.size,
             voxelRanges: this.voxelRangesBuffer.size,
             coarseCellRanges: this.coarseCellRangesBuffer.size,
 
@@ -1265,7 +1242,7 @@ VolumeRaycaster.prototype.reportMemoryUse =
     // Decompress each block and compute its value range, output to the blockRangesBuffer
     // BlockRangesBuffer = purely the ZFP block range
     // TODO: We don't need to keep this buffer long term actually
-    this.blockRangesBuffer = this.device.createBuffer({
+    var blockRangesBuffer = this.device.createBuffer({
         size: this.totalBlocks * 2 * 4,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
@@ -1298,7 +1275,7 @@ VolumeRaycaster.prototype.reportMemoryUse =
             {
                 binding: 2,
                 resource: {
-                    buffer: this.blockRangesBuffer,
+                    buffer: blockRangesBuffer,
                 }
             }
         ]
@@ -1558,9 +1535,8 @@ VolumeRaycaster.prototype.renderSurface =
         pass.setPipeline(this.depthCompositePipeline);
         pass.setBindGroup(0, this.depthCompositeBG);
         pass.setBindGroup(1, this.depthCompositeBG1);
-        pass.dispatchWorkgroups(Math.ceil(this.width / 32),
-                                Math.ceil(this.height / this.speculationCount),
-                                1);
+        pass.dispatchWorkgroups(
+            Math.ceil(this.width / 32), Math.ceil(this.height / this.speculationCount), 1);
         pass.end();
         this.device.queue.submit([commandEncoder.finish()]);
         await this.device.queue.onSubmittedWorkDone();
@@ -1579,8 +1555,7 @@ VolumeRaycaster.prototype.renderSurface =
                                           this.width * this.height * 4);
         this.device.queue.submit([commandEncoder.finish()]);
 
-        numRaysActive =
-            await this.scanRayAfterActive.scan(this.width * this.height);
+        numRaysActive = await this.scanRayAfterActive.scan(this.width * this.height);
         console.log(`num rays active after raytracing: ${numRaysActive}`);
 
         var commandEncoder = this.device.createCommandEncoder();
@@ -1662,8 +1637,7 @@ VolumeRaycaster.prototype.macroTraverse = async function() {
     var resetSpecIDsPass = commandEncoder.beginComputePass();
     resetSpecIDsPass.setBindGroup(0, this.resetSpeculativeIDsBG);
     resetSpecIDsPass.setPipeline(this.resetSpeculativeIDsPipeline);
-    resetSpecIDsPass.dispatchWorkgroups(
-        Math.ceil(this.width / 32), this.height, 1);
+    resetSpecIDsPass.dispatchWorkgroups(Math.ceil(this.width / 32), this.height, 1);
     resetSpecIDsPass.end();
 
     // Update the current pass index

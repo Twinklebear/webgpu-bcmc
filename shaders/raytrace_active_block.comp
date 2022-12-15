@@ -29,17 +29,12 @@ layout(set = 1, binding = 3, std430) buffer BlockInformation
     BlockInfo blocks[];
 };
 
-layout(set = 1, binding = 5, std430) buffer BlockRanges
-{
-    vec2 block_ranges[];
-};
-
-layout(set = 1, binding = 6, std430) buffer SpeculativeIDs
+layout(set = 1, binding = 5, std430) buffer SpeculativeIDs
 {
     uint spec_ids[];
 };
 
-layout(set = 1, binding = 7, std430) buffer RayRGBZ
+layout(set = 1, binding = 6, std430) buffer RayRGBZ
 {
     vec2 ray_rgbz[];
 };
