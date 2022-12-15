@@ -20,6 +20,7 @@ struct BlockInfo {
     uint id;
     uint ray_offset;
     uint num_rays;
+    // Note: even if we remove this, the struct will still align to sizeof(vec4)
     uint lod;
 };
 
