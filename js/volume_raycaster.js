@@ -1837,7 +1837,9 @@ VolumeRaycaster.prototype.sortActiveRaysByBlock = async function(numRaysActive) 
                                            this.rayBlockIDBuffer,
                                            this.compactRayBlockIDBuffer);
 
-    // Compact the active block IDs down as well
+    // Compact the visible block IDs down as well
+    // this actually gives us the # of visible blocks, although it's named poorly as # active
+    // blocks
     var numActiveBlocks = await this.scanBlockActiveOffsets.scan(this.totalBlocks);
     await this.streamCompact.compactActiveIDs(this.totalBlocks,
                                               this.blockVisibleBuffer,
