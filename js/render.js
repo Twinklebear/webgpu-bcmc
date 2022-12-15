@@ -44,9 +44,17 @@
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     });
     var resolutionBuffer = device.createBuffer({
-        size: 4,
+        size: 2 * 4,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
+    var commandEncoder = device.createCommandEncoder();
+    var uploadResolution = device.createBuffer(
+        {size: 2 * 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
+    new Uint32Array(uploadResolution.getMappedRange()).set([canvas.width, canvas.height]);
+    uploadResolution.unmap();
+    commandEncoder.copyBufferToBuffer(
+        uploadResolution, 0, resolutionBuffer, 0, 2 * 4);
+    device.queue.submit([commandEncoder.finish()]);
     var renderBGLayout = device.createBindGroupLayout({
         entries: [
             {binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {viewDimension: "2d"}},
@@ -71,14 +79,6 @@
         await render.volumeRC.setCompressedVolume(
             compressedData, dataset.compressionRate, volumeDims, dataset.scale);
         recomputeSurface = true;
-        var commandEncoder = device.createCommandEncoder();
-        var uploadResolution = device.createBuffer(
-            {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
-        new Uint32Array(uploadResolution.getMappedRange()).set([halfResolution.checked ? 1 : 0]);
-        uploadResolution.unmap();
-        commandEncoder.copyBufferToBuffer(
-            uploadResolution, 0, resolutionBuffer, 0, 4);
-        device.queue.submit([commandEncoder.finish()]);
         render.renderPipelineBG = device.createBindGroup({
             layout: renderBGLayout,
             entries: [
