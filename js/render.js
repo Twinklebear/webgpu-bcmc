@@ -67,14 +67,20 @@
         minFilter: 'linear',
     });
 
-    var halfResolution = document.getElementById("halfResolution");
-    var width = halfResolution.checked ? canvas.width / 2 : canvas.width;
-    var height = halfResolution.checked ? canvas.height / 2 : canvas.height;
+    var resolution = document.getElementById("resolution");
+    var resolutionToDivisor = {
+        "full": 1,
+        "half": 2,
+        "quarter": 4
+    }
+    var width = canvas.width / resolutionToDivisor[resolution.value];
+    var height = canvas.height / resolutionToDivisor[resolution.value];
     this.volumeRC = new VolumeRaycaster(device, width, height);
     var render = this;
-    halfResolution.onchange = async () => {
-        var width = halfResolution.checked ? canvas.width / 2 : canvas.width;
-        var height = halfResolution.checked ? canvas.height / 2 : canvas.height;
+    resolution.onchange = async () => {
+        var width = canvas.width / resolutionToDivisor[resolution.value];
+        var height = canvas.height / resolutionToDivisor[resolution.value];
+        console.log(width, height);
         render.volumeRC = new VolumeRaycaster(device, width, height);
         await render.volumeRC.setCompressedVolume(
             compressedData, dataset.compressionRate, volumeDims, dataset.scale);
