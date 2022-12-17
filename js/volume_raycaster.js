@@ -1164,9 +1164,9 @@ VolumeRaycaster.prototype.reportMemoryUse = function() {
             blockVisible: this.blockVisibleBuffer.size,
             // This is really based on block visible, not active
             blockVisibleCompactOffsets: this.blockVisibleCompactOffsetBuffer.size,
-            blockNumRays: this.blockNumRaysBuffer.size,
-            blockRayOffsets: this.blockRayOffsetBuffer.size,
-            visibleBlockIDs: this.visibleBlockIDBuffer.size,
+            blockNumRays: this.blockNumRaysBuffer ? this.blockNumRaysBuffer.size : 0,
+            blockRayOffsets: this.blockRayOffsetBuffer ? this.blockRayOffsetBuffer.size : 0,
+            visibleBlockIDs: this.visibleBlockIDBuffer ? this.visibleBlockIDBuffer.size : 0,
 
             // Ignoring the combined block info buffer since this came from a binding count
             // limitation in WebGPU which I think has been addressed, we just haven't updated
@@ -1669,6 +1669,9 @@ VolumeRaycaster.prototype.compactVisibleBlockIDs = async function() {
 
     // Compact the visible block IDs down
     var numVisibleBlocks = await this.scanBlockVisibleOffsets.scan(this.totalBlocks);
+    if (numVisibleBlocks === 0) {
+        return numVisibleBlocks;
+    }
 
     this.visibleBlockIDBuffer = this.device.createBuffer({
         size: 4 * numVisibleBlocks,
