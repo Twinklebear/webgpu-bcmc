@@ -1303,8 +1303,10 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
         pass.setBindGroup(1, blockIDOffsetBG, pushConstants.dynamicOffsets, i, 1);
         pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
     }
+    pass.end();
 
     // Compute each block's range including its neighbors
+    var pass = commandEncoder.beginComputePass();
     pass.setPipeline(this.computeVoxelRangePipeline);
     pass.setBindGroup(0, bindGroup);
     pass.setBindGroup(2, this.voxelBindGroup);
@@ -1312,7 +1314,9 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
         pass.setBindGroup(1, blockIDOffsetBG, pushConstants.dynamicOffsets, i, 1);
         pass.dispatchWorkgroups(pushConstants.dispatchSizes[i], 1, 1);
     }
+    pass.end();
 
+    var pass = commandEncoder.beginComputePass();
     // Enqueue pass to compute the coarse cell ranges
     var totalWorkGroupsCoarseCell = Math.ceil(this.totalCoarseCells / groupThreadCount);
     var coarsePushConstants = buildPushConstantsBuffer(this.device, totalWorkGroupsCoarseCell);
@@ -1338,6 +1342,7 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
 
     pass.end();
     this.device.queue.submit([commandEncoder.finish()]);
+    await this.device.queue.onSubmittedWorkDone();
 };
 
 // Progressively compute the surface, returns true when rendering is complete
