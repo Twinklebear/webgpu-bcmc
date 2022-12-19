@@ -9,7 +9,6 @@
         },
     };
     var device = await adapter.requestDevice(gpuDeviceDesc);
-    console.log(`max wg = ${device.limits.maxComputeWorkgroupsPerDimension}`);
 
     var canvas = document.getElementById("webgpu-canvas");
     var context = canvas.getContext("webgpu");
@@ -20,7 +19,6 @@
         console.log(`Linked to data set ${name}`);
         dataset = datasets[name];
     }
-    console.log(`Compression rate ${dataset.compressionRate}`);
 
     var volumeDims = getVolumeDimensions(dataset.name);
     var zfpDataName = dataset.name + ".zfp";
@@ -52,8 +50,7 @@
         {size: 2 * 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
     new Uint32Array(uploadResolution.getMappedRange()).set([canvas.width, canvas.height]);
     uploadResolution.unmap();
-    commandEncoder.copyBufferToBuffer(
-        uploadResolution, 0, resolutionBuffer, 0, 2 * 4);
+    commandEncoder.copyBufferToBuffer(uploadResolution, 0, resolutionBuffer, 0, 2 * 4);
     device.queue.submit([commandEncoder.finish()]);
     var renderBGLayout = device.createBindGroupLayout({
         entries: [
@@ -68,11 +65,7 @@
     });
 
     var resolution = document.getElementById("resolution");
-    var resolutionToDivisor = {
-        "full": 1,
-        "half": 2,
-        "quarter": 4
-    }
+    var resolutionToDivisor = {"full": 1, "half": 2, "quarter": 4};
     var width = canvas.width / resolutionToDivisor[resolution.value];
     var height = canvas.height / resolutionToDivisor[resolution.value];
     this.volumeRC = new VolumeRaycaster(device, width, height);
@@ -80,7 +73,7 @@
     resolution.onchange = async () => {
         var width = canvas.width / resolutionToDivisor[resolution.value];
         var height = canvas.height / resolutionToDivisor[resolution.value];
-        console.log(width, height);
+        console.log(`Changed resolution to ${width}x${height}`);
         render.volumeRC = new VolumeRaycaster(device, width, height);
         await render.volumeRC.setCompressedVolume(
             compressedData, dataset.compressionRate, volumeDims, dataset.scale);
@@ -88,12 +81,12 @@
         render.renderPipelineBG = device.createBindGroup({
             layout: renderBGLayout,
             entries: [
-                {binding: 0, resource: render.volumeRC.renderTarget.createView()}, 
+                {binding: 0, resource: render.volumeRC.renderTarget.createView()},
                 {binding: 1, resource: {buffer: resolutionBuffer}},
                 {binding: 2, resource: sampler}
             ]
         });
-    }
+    };
     await this.volumeRC.setCompressedVolume(
         compressedData, dataset.compressionRate, volumeDims, dataset.scale);
     // compressedData = null;
@@ -227,7 +220,7 @@
     this.renderPipelineBG = device.createBindGroup({
         layout: renderBGLayout,
         entries: [
-            {binding: 0, resource: this.volumeRC.renderTarget.createView()}, 
+            {binding: 0, resource: this.volumeRC.renderTarget.createView()},
             {binding: 1, resource: {buffer: resolutionBuffer}},
             {binding: 2, resource: sampler}
         ]
@@ -322,13 +315,13 @@
         }
 
         if (recomputeSurface || !surfaceDone) {
-            var perfTracker = {};
             var start = performance.now();
             surfaceDone = await this.volumeRC.renderSurface(
-                currentIsovalue, 1, upload, perfTracker, recomputeSurface);
+                currentIsovalue, 1, upload, recomputeSurface);
             var end = performance.now();
 
-            averageComputeTime = Math.round(this.volumeRC.totalPassTime / this.volumeRC.numPasses);
+            averageComputeTime =
+                Math.round(this.volumeRC.totalPassTime / this.volumeRC.numPasses);
             recomputeSurface = false;
 
             displayCacheInfo();
@@ -356,8 +349,9 @@
                 }
                 context.putImageData(imgData, 0, 0);
                 outCanvas.toBlob(function(b) {
-                    saveAs(b,
-                           `${dataset.name.substring(0, 5)}_pass_${this.volumeRC.numPasses}.png`);
+                    saveAs(
+                        b,
+                        `${dataset.name.substring(0, 5)}_pass_${this.volumeRC.numPasses}.png`);
                 }, "image/png");
                 imageBuffer.unmap();
             }
