@@ -1,4 +1,4 @@
-const benchmarkIterations = 10;
+const benchmarkIterations = 100;
 
 var RandomIsovalueBenchmark = function(isovalueSlider, range) {
     this.name = "random";
