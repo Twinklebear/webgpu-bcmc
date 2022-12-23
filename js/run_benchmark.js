@@ -1,57 +1,43 @@
-var RandomIsovalueBenchmark =
-    function(isovalueSlider, perfResults, range) {
+const benchmarkIterations = 10;
+
+var RandomIsovalueBenchmark = function(isovalueSlider, range) {
+    this.name = "random";
     this.iteration = 0;
     this.isovalueSlider = isovalueSlider;
-    this.perfResults = perfResults;
     this.range = range;
-}
+    this.numIterations = benchmarkIterations;
+};
 
-    RandomIsovalueBenchmark.prototype.run =
-        function() {
-    if (this.iteration == 100) {
-        console.log(JSON.stringify(this.perfResults));
-        for (const prop in this.perfResults) {
-            var sum = this.perfResults[prop].reduce(function(acc, x) {
-                return acc + x;
-            });
-            console.log(
-                `${prop} average = ${(sum / this.perfResults[prop].length).toFixed(3)}`);
-        }
+RandomIsovalueBenchmark.prototype.run = function() {
+    if (this.iteration == this.numIterations) {
         return false;
     }
     var range = this.range[1] - this.range[0];
     this.isovalueSlider.value = Math.random() * range + this.range[0];
     this.iteration += 1;
     return true;
-}
+};
 
-var SweepIsovalueBenchark =
-    function(isovalueSlider, perfResults, range, sweepUp) {
+var SweepIsovalueBenchark = function(isovalueSlider, range, sweepUp) {
     this.iteration = 0;
     this.isovalueSlider = isovalueSlider;
-    this.perfResults = perfResults;
     this.range = range;
     this.sweepUp = sweepUp;
+    this.numIterations = benchmarkIterations;
     if (this.sweepUp) {
+        this.name = "sweepUp";
         this.currentValue = range[0];
     } else {
+        this.name = "sweepDown";
         this.currentValue = range[1];
     }
-}
+};
 
-    SweepIsovalueBenchark.prototype.run = function() {
-    if (this.iteration == 100) {
-        console.log(JSON.stringify(this.perfResults));
-        for (const prop in this.perfResults) {
-            var sum = this.perfResults[prop].reduce(function(acc, x) {
-                return acc + x;
-            });
-            console.log(
-                `${prop} average = ${(sum / this.perfResults[prop].length).toFixed(3)}`);
-        }
+SweepIsovalueBenchark.prototype.run = function() {
+    if (this.iteration == this.numIterations) {
         return false;
     }
-    var step = (this.range[1] - this.range[0]) / 100;
+    var step = (this.range[1] - this.range[0]) / benchmarkIterations;
     if (this.sweepUp) {
         this.currentValue += step;
     } else {

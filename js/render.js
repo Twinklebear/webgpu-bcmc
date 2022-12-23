@@ -237,11 +237,7 @@
 
     var currentBenchmark = null;
 
-    // Other elements to track are added by the different objects
-    var perfResults = {
-        isovalue: [],
-        totalTime: [],
-    };
+    var perfStats = [];
 
     var recomputeSurface = true;
     var surfaceDone = false;
@@ -280,26 +276,25 @@
         var start = performance.now();
 
         if (requestBenchmark && !currentBenchmark) {
-            perfResults = {
-                isovalue: [],
-                totalTime: [],
-            };
+            perfStats = [];
             await this.volumeRC.lruCache.reset();
             if (requestBenchmark == "random") {
-                currentBenchmark =
-                    new RandomIsovalueBenchmark(isovalueSlider, perfResults, dataset.range);
+                currentBenchmark = new RandomIsovalueBenchmark(isovalueSlider, dataset.range);
             } else if (requestBenchmark == "sweepUp") {
-                currentBenchmark = new SweepIsovalueBenchark(
-                    isovalueSlider, perfResults, dataset.range, true);
+                currentBenchmark =
+                    new SweepIsovalueBenchark(isovalueSlider, dataset.range, true);
             } else {
-                currentBenchmark = new SweepIsovalueBenchark(
-                    isovalueSlider, perfResults, dataset.range, false);
+                currentBenchmark =
+                    new SweepIsovalueBenchark(isovalueSlider, dataset.range, false);
             }
             requestBenchmark = null;
         }
 
         if (currentBenchmark && surfaceDone) {
             if (!currentBenchmark.run()) {
+                var blob = new Blob([JSON.stringify(perfStats)], {type: "text/plain"});
+                saveAs(blob, `perf-${dataset.name}-${currentBenchmark.name}.json`);
+
                 currentBenchmark = null;
             }
         }
@@ -319,6 +314,11 @@
             surfaceDone = await this.volumeRC.renderSurface(
                 currentIsovalue, 1, upload, recomputeSurface);
             var end = performance.now();
+
+            if (surfaceDone) {
+                perfStats.push(
+                    {"isovalue": currentIsovalue, "stats": this.volumeRC.surfacePerfStats});
+            }
 
             averageComputeTime =
                 Math.round(this.volumeRC.totalPassTime / this.volumeRC.numPasses);

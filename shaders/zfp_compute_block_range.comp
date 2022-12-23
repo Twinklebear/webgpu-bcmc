@@ -44,8 +44,6 @@ void main(void)
     // No support for strided volumes
     const uvec3 stride = uvec3(1, volume_dims.x, volume_dims.x * volume_dims.y);
 
-    // Should always be 4 right? not sure why the CUDA version computes
-    // it from the padded dims
     uvec3 nblocks;
     nblocks.x = padded_dims.x >> 2;
     nblocks.y = padded_dims.y >> 2;
