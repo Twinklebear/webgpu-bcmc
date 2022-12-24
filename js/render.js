@@ -130,15 +130,10 @@
     };
     displayCacheInfo();
 
-    const defaultEye = vec3.set(vec3.create(), 0.0, 0.0, 1.0);
+    const defaultEye = vec3.set(vec3.create(), 0.0, 0.0, 1.5);
     const center = vec3.set(vec3.create(), 0.0, 0.0, 0.0);
     const up = vec3.set(vec3.create(), 0.0, 1.0, 0.0);
-    /*
-      const defaultEye = vec3.set(vec3.create(), -0.256, -0.364, -0.009);
-      const defaultDir = vec3.set(vec3.create(), 0.507, 0.869, 0.0469);
-      const center = vec3.add(vec3.create(), defaultEye, defaultDir);
-      const up = vec3.set(vec3.create(), -0.0088, -0.0492, 0.999);
-      */
+
     var camera = new ArcballCamera(defaultEye, center, up, 4, [
         canvas.width,
         canvas.height,
@@ -236,6 +231,7 @@
     };
 
     var currentBenchmark = null;
+    var cameraBenchmark = null;
 
     var perfStats = [];
 
@@ -243,6 +239,49 @@
     var surfaceDone = false;
     var averageComputeTime = 0;
     while (true) {
+        await animationFrame();
+        var start = performance.now();
+
+        if (requestBenchmark && !currentBenchmark) {
+            perfStats = [];
+            await this.volumeRC.lruCache.reset();
+            if (requestBenchmark == "random") {
+                var valueBenchmark =
+                    new RandomIsovalueBenchmark(isovalueSlider, dataset.range);
+                cameraBenchmark = new CameraOrbitBenchmark(1.5);
+                currentBenchmark = new NestedBenchmark(valueBenchmark, cameraBenchmark);
+            } else if (requestBenchmark == "sweepUp") {
+                var valueBenchmark =
+                    new SweepIsovalueBenchark(isovalueSlider, dataset.range, true);
+                cameraBenchmark = new CameraOrbitBenchmark(1.5);
+                currentBenchmark = new NestedBenchmark(valueBenchmark, cameraBenchmark);
+            } else if (requestBenchmark == "sweepDown") {
+                var valueBenchmark =
+                    new SweepIsovalueBenchark(isovalueSlider, dataset.range, false);
+                cameraBenchmark = new CameraOrbitBenchmark(1.5);
+                currentBenchmark = new NestedBenchmark(valueBenchmark, cameraBenchmark);
+            } else {
+                cameraBenchmark = new CameraOrbitBenchmark(1.5);
+                currentBenchmark = cameraBenchmark;
+            }
+            requestBenchmark = null;
+        }
+
+        if (currentBenchmark && surfaceDone) {
+            if (!currentBenchmark.run()) {
+                var blob = new Blob([JSON.stringify(perfStats)], {type: "text/plain"});
+                saveAs(blob, `perf-${dataset.name}-${currentBenchmark.name}.json`);
+
+                currentBenchmark = null;
+            } else if (currentBenchmark.name.includes("cameraOrbit")) {
+                camera = new ArcballCamera(cameraBenchmark.currentPoint, center, up, 4, [
+                    canvas.width,
+                    canvas.height,
+                ]);
+                cameraChanged = true;
+            }
+        }
+
         projView = mat4.mul(projView, proj, camera.camera);
         await upload.mapAsync(GPUMapMode.WRITE);
         var uploadArray = new Float32Array(upload.getMappedRange());
@@ -272,39 +311,11 @@
             */
         }
 
-        await animationFrame();
-        var start = performance.now();
-
-        if (requestBenchmark && !currentBenchmark) {
-            perfStats = [];
-            await this.volumeRC.lruCache.reset();
-            if (requestBenchmark == "random") {
-                currentBenchmark = new RandomIsovalueBenchmark(isovalueSlider, dataset.range);
-            } else if (requestBenchmark == "sweepUp") {
-                currentBenchmark =
-                    new SweepIsovalueBenchark(isovalueSlider, dataset.range, true);
-            } else {
-                currentBenchmark =
-                    new SweepIsovalueBenchark(isovalueSlider, dataset.range, false);
-            }
-            requestBenchmark = null;
-        }
-
-        if (currentBenchmark && surfaceDone) {
-            if (!currentBenchmark.run()) {
-                var blob = new Blob([JSON.stringify(perfStats)], {type: "text/plain"});
-                saveAs(blob, `perf-${dataset.name}-${currentBenchmark.name}.json`);
-
-                currentBenchmark = null;
-            }
-        }
-
         if (!enableCache.checked) {
             await this.volumeRC.lruCache.reset();
         }
 
         if (isovalueSlider.value != currentIsovalue || requestRecompute) {
-            console.log(`Isovalue = ${isovalueSlider.value}`);
             recomputeSurface = true;
             currentIsovalue = parseFloat(isovalueSlider.value);
         }
