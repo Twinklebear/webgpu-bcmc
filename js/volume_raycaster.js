@@ -1120,21 +1120,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
     });
 };
 
-VolumeRaycaster.prototype.reportMemoryUse = function() {
-    var formatBytes = function(count) {
-        const giga = 1000000000;
-        const mega = 1000000;
-        const kilo = 1000;
-        if (count > giga) {
-            return (count / giga).toFixed(2) + " GB";
-        } else if (count > mega) {
-            return (count / mega).toFixed(2) + " MB";
-        } else if (count > kilo) {
-            return (count / kilo).toFixed(2) + " KB";
-        }
-        return count + " B";
-    };
-
+VolumeRaycaster.prototype.getMemoryStats = function() {
     // Data from this object
     var memUse = {
         mc: {
@@ -1191,6 +1177,25 @@ VolumeRaycaster.prototype.reportMemoryUse = function() {
             cacheSizeBuf: 4,
         },
     };
+    return memUse;
+};
+
+VolumeRaycaster.prototype.reportMemoryUse = function() {
+    var formatBytes = function(count) {
+        const giga = 1000000000;
+        const mega = 1000000;
+        const kilo = 1000;
+        if (count > giga) {
+            return (count / giga).toFixed(2) + " GB";
+        } else if (count > mega) {
+            return (count / mega).toFixed(2) + " MB";
+        } else if (count > kilo) {
+            return (count / kilo).toFixed(2) + " KB";
+        }
+        return count + " B";
+    };
+
+    var memUse = this.getMemoryStats();
 
     var totalMem = 0;
     var rcText = "Raycaster Data:<ul>";
@@ -1567,6 +1572,7 @@ VolumeRaycaster.prototype.renderSurface =
     }
     var endPass = performance.now();
     this.passPerfStats["totalPassTime"] = endPass - startPass;
+    this.passPerfStats["memory"] = this.getMemoryStats();
     this.surfacePerfStats.push(this.passPerfStats);
 
     console.log("=============");

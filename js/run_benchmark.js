@@ -1,5 +1,5 @@
 const benchmarkIterations = 100;
-const cameraIterations = 25;
+const cameraIterations = 15;
 
 var RandomIsovalueBenchmark = function(isovalueSlider, range) {
     this.name = "random";
