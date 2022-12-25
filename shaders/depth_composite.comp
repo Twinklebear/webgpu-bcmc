@@ -66,7 +66,19 @@ void main(void)
         }
     }
     if (color.a != FLT_MAX) {
-        imageStore(render_target, pixel_coords, vec4(color.rgb, 1));
+#ifdef DRAW_FOG
+        const vec3 volume_translation = vec3(0.f) - volume_scale.xyz * 0.5f;
+        vec3 vol_eye = (eye_pos.xyz - volume_translation) / volume_scale.xyz;
+        vol_eye = vol_eye * volume_dims.xyz - vec3(0.5f);
+        vec2 t_hit =
+            intersect_box(vol_eye, rays[ray_index].ray_dir, vec3(0.f), volume_dims.xyz - 1.f);
+        t_hit.x = max(t_hit.x, 0.f);
+
+        const float fog_start = t_hit.x + 0.1f * length(volume_dims.xyz);
+        float fog = exp(-1.f * max((color.w - fog_start) / (t_hit.y - t_hit.x), 0.f));
+        color.rgb = fog * color.rgb + (1.f - fog) * vec3(1.f);
+#endif
+        imageStore(render_target, pixel_coords, vec4(color.rgb, 1.f));
     }
     // Terminate rays that were partially speculated and may not have hit anything
     if (rays[ray_index].t == -FLT_MAX) {
