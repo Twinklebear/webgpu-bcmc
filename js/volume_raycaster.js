@@ -1123,6 +1123,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
 VolumeRaycaster.prototype.getMemoryStats = function() {
     // Data from this object
     var memUse = {
+        units: "bytes",
         mc: {
             compressedData: this.compressedBuffer.size,
             voxelRanges: this.voxelRangesBuffer.size,
@@ -1432,7 +1433,11 @@ VolumeRaycaster.prototype.renderSurface =
         var start = performance.now();
         await this.computeInitialRays(viewParamUpload);
         var end = performance.now();
-        this.passPerfStats["computeInitialRays"] = end - start;
+        this.passPerfStats["computeInitialRays_ms"] = end - start;
+        this.passPerfStats["totalBlocks"] = this.totalBlocks;
+        this.passPerfStats["volumeDims"] = this.volumeDims;
+        this.passPerfStats["imageSize"] = [this.width, this.height];
+        this.passPerfStats["nPixels"] = this.width * this.height;
     }
     console.log(`++++ Surface pass ${this.numPasses} ++++`);
     this.passPerfStats["passID"] = this.numPasses;
@@ -1459,13 +1464,13 @@ VolumeRaycaster.prototype.renderSurface =
     await this.macroTraverse();
     var end = performance.now();
     // console.log(`Macro Traverse: ${end - start}ms`);
-    this.passPerfStats["macroTraverse"] = end - start;
+    this.passPerfStats["macroTraverse_ms"] = end - start;
 
     start = performance.now();
     await this.markActiveBlocks();
     end = performance.now();
     // console.log(`Mark Active Blocks: ${end - start}ms`);
-    this.passPerfStats["markActiveBlocks"] = end - start;
+    this.passPerfStats["markActiveBlocks_ms"] = end - start;
 
     // Decompress any new blocks needed for the pass
     start = performance.now();
@@ -1474,7 +1479,7 @@ VolumeRaycaster.prototype.renderSurface =
         await this.lruCache.update(this.blockActiveBuffer, this.passPerfStats);
     end = performance.now();
     // console.log(`LRU: ${end - start}ms`);
-    this.passPerfStats["lruCacheUpdate"] = end - start;
+    this.passPerfStats["lruCacheUpdate_ms"] = end - start;
     this.passPerfStats["nBlocksToDecompress"] = nBlocksToDecompress;
 
     this.newDecompressed = nBlocksToDecompress;
@@ -1484,14 +1489,14 @@ VolumeRaycaster.prototype.renderSurface =
         await this.decompressBlocks(nBlocksToDecompress, decompressBlockIDs);
         end = performance.now();
         // console.log(`Decompress: ${end - start}ms`);
-        this.passPerfStats["decompressBlocks"] = end - start;
+        this.passPerfStats["decompressBlocks_ms"] = end - start;
     }
 
     // Now at this step we can do the block id compaction, compute # blocks visible
     var numVisibleBlocks = await this.compactVisibleBlockIDs();
     // this.numVisibleBlocks is just for displaying the value in the UI
     this.numVisibleBlocks = numVisibleBlocks;
-    this.passPerfStats["numVisibleBlocks"] = 0;
+    this.passPerfStats["nVisibleBlocks"] = numVisibleBlocks;
     var numRaysActive = 0;
     if (numVisibleBlocks > 0) {
         start = performance.now();
@@ -1499,21 +1504,21 @@ VolumeRaycaster.prototype.renderSurface =
         // block buffers
         numRaysActive = await this.computeBlockRayOffsets(numVisibleBlocks);
         end = performance.now();
-        this.passPerfStats["computeBlockRayOffsets"] = end - start;
-        this.passPerfStats["numRaysActive"] = numRaysActive;
+        this.passPerfStats["computeBlockRayOffsets_ms"] = end - start;
+        this.passPerfStats["nRaysActive"] = numRaysActive;
         // console.log(`Ray active and offsets: ${end - start}ms`);
         // console.log(`numRaysActive = ${numRaysActive}`);
         if (numRaysActive > 0) {
             start = performance.now();
             await this.sortActiveRaysByBlock(numRaysActive);
             end = performance.now();
-            this.passPerfStats["sortActiveRaysByBlock"] = end - start;
+            this.passPerfStats["sortActiveRaysByBlock_ms"] = end - start;
             // console.log(`Sort active rays by block: ${end - start}ms`);
 
             start = performance.now();
             await this.raytraceVisibleBlocks(numVisibleBlocks);
             end = performance.now();
-            this.passPerfStats["raytraceVisibleBlocks"] = end - start;
+            this.passPerfStats["raytraceVisibleBlocks_ms"] = end - start;
             // console.log(`Raytrace blocks: ${end - start}ms`);
             // console.log(`PASS TOOK: ${end - startPass}ms`);
 
@@ -1529,7 +1534,7 @@ VolumeRaycaster.prototype.renderSurface =
             this.device.queue.submit([commandEncoder.finish()]);
             await this.device.queue.onSubmittedWorkDone();
             end = performance.now();
-            this.passPerfStats["depthComposite"] = end - start;
+            this.passPerfStats["depthComposite_ms"] = end - start;
 
             start = performance.now();
             var commandEncoder = this.device.createCommandEncoder();
@@ -1548,8 +1553,8 @@ VolumeRaycaster.prototype.renderSurface =
 
             numRaysActive = await this.scanRayAfterActive.scan(this.width * this.height);
             end = performance.now();
-            this.passPerfStats["countRemainingActiveRays"] = end - start;
-            this.passPerfStats["endPassRaysActive"] = numRaysActive;
+            this.passPerfStats["countRemainingActiveRays_ms"] = end - start;
+            this.passPerfStats["endPassRaysActive_ms"] = numRaysActive;
             // console.log(`num rays active after raytracing: ${numRaysActive}`);
 
             var commandEncoder = this.device.createCommandEncoder();
@@ -1571,7 +1576,7 @@ VolumeRaycaster.prototype.renderSurface =
         }
     }
     var endPass = performance.now();
-    this.passPerfStats["totalPassTime"] = endPass - startPass;
+    this.passPerfStats["totalPassTime_ms"] = endPass - startPass;
     this.passPerfStats["memory"] = this.getMemoryStats();
     this.surfacePerfStats.push(this.passPerfStats);
 
