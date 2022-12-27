@@ -1574,6 +1574,8 @@ VolumeRaycaster.prototype.renderSurface =
 
             console.log(`++++++++++`);
         }
+    } else {
+        this.passPerfStats["nRaysActive"] = numRaysActive;
     }
     var endPass = performance.now();
     this.passPerfStats["totalPassTime_ms"] = endPass - startPass;
