@@ -1589,7 +1589,6 @@ VolumeRaycaster.prototype.renderSurface =
     this.renderComplete = numRaysActive == 0;
     if (this.renderComplete) {
         console.log(`Avg time per pass ${this.totalPassTime / this.numPasses}ms`);
-        // TODO: record perf stats to JSON and dump it here
     }
     return this.renderComplete;
 };
