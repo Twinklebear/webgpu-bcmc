@@ -1,4 +1,4 @@
-var VolumeRaycaster = function(device, width, height) {
+var VolumeRaycaster = function(device, width, height, recordVisibleBlocksUI) {
     this.device = device;
     this.scanPipeline = new ExclusiveScanPipeline(device);
     this.streamCompact = new StreamCompact(device);
@@ -11,6 +11,13 @@ var VolumeRaycaster = function(device, width, height) {
 
     this.width = width;
     this.height = height;
+
+    // Record visible blocks will optionally track the total % of blocks that were active or
+    // visible while rendering the surface. This is just needed to provide this statistic for
+    // the paper and is computed on the host by just reading back the blockVisible buffer and
+    // or'ing it with the previous pass's one to accumulate the total block visible list
+    // without double-counting
+    this.recordVisibleBlocksUI = recordVisibleBlocksUI;
 
     // Each pass appends its performance stats to the perfStats array,
     // this is reset for each new isovalue
@@ -1400,6 +1407,17 @@ VolumeRaycaster.prototype.renderSurface =
 
         this.surfacePerfStats = [];
 
+        this.recordVisibleBlocks = false;
+        this.recordBlockActiveList = null;
+        this.recordBlockVisibleList = null;
+        if (this.recordVisibleBlocksUI.checked) {
+            this.recordVisibleBlocks = true;
+            console.log(
+                `WARNING: Recording active/visible block statistics may effect performance!`);
+            this.recordBlockActiveList = new Uint8Array(this.totalBlocks).fill(0);
+            this.recordBlockVisibleList = new Uint8Array(this.totalBlocks).fill(0);
+        }
+
         // Upload the isovalue
         await this.uploadIsovalueBuf.mapAsync(GPUMapMode.WRITE);
         new Float32Array(this.uploadIsovalueBuf.getMappedRange()).set([isovalue]);
@@ -1588,6 +1606,24 @@ VolumeRaycaster.prototype.renderSurface =
     //}
     this.renderComplete = numRaysActive == 0;
     if (this.renderComplete) {
+        if (this.recordVisibleBlocks) {
+            var nTotalBlocksActive = 0;
+            var nTotalBlocksVisible = 0;
+            for (var i = 0; i < this.totalBlocks; ++i) {
+                if (this.recordBlockActiveList[i] != 0) {
+                    ++nTotalBlocksActive;
+                }
+                if (this.recordBlockVisibleList[i] != 0) {
+                    ++nTotalBlocksVisible;
+                }
+            }
+            console.log(`Total blocks active: ${nTotalBlocksActive} (${
+                nTotalBlocksActive / this.totalBlocks * 100})`);
+            console.log(`Total blocks visible: ${nTotalBlocksVisible} (${
+                nTotalBlocksVisible / this.totalBlocks * 100})`);
+            this.passPerfStats["nTotalBlocksActive"] = nTotalBlocksActive;
+            this.passPerfStats["nTotalBlocksVisible"] = nTotalBlocksVisible;
+        }
         console.log(`Avg time per pass ${this.totalPassTime / this.numPasses}ms`);
     }
     return this.renderComplete;
@@ -1694,6 +1730,41 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
 
     this.device.queue.submit([commandEncoder.finish()]);
     await this.device.queue.onSubmittedWorkDone();
+
+    if (this.recordVisibleBlocks) {
+        var activeReadback = this.device.createBuffer({
+            size: 4 * this.totalBlocks,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+        });
+        var visibleReadback = this.device.createBuffer({
+            size: 4 * this.totalBlocks,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+        });
+
+        var commandEncoder = this.device.createCommandEncoder();
+        commandEncoder.copyBufferToBuffer(
+            this.blockActiveBuffer, 0, activeReadback, 0, activeReadback.size);
+        commandEncoder.copyBufferToBuffer(
+            this.blockVisibleBuffer, 0, visibleReadback, 0, visibleReadback.size);
+        this.device.queue.submit([commandEncoder.finish()]);
+        await this.device.queue.onSubmittedWorkDone();
+
+        await activeReadback.mapAsync(GPUMapMode.READ);
+        await visibleReadback.mapAsync(GPUMapMode.READ);
+
+        var blockActive = new Uint32Array(activeReadback.getMappedRange());
+        var blockVisible = new Uint32Array(visibleReadback.getMappedRange());
+        for (var i = 0; i < this.totalBlocks; ++i) {
+            this.recordBlockActiveList[i] |= blockActive[i];
+            this.recordBlockVisibleList[i] |= blockVisible[i];
+        }
+
+        activeReadback.unmap();
+        visibleReadback.unmap();
+
+        activeReadback.destroy();
+        visibleReadback.destroy();
+    }
 };
 
 // Compute the number of visible blocks and compact their IDs. Also produces an offset buffer

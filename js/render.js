@@ -64,17 +64,18 @@
         minFilter: 'linear',
     });
 
+    var recordVisibleBlocksUI = document.getElementById("recordVisibleBlocks")
     var resolution = document.getElementById("resolution");
     var resolutionToDivisor = {"full": 1, "half": 2, "quarter": 4};
     var width = canvas.width / resolutionToDivisor[resolution.value];
     var height = canvas.height / resolutionToDivisor[resolution.value];
-    this.volumeRC = new VolumeRaycaster(device, width, height);
+    this.volumeRC = new VolumeRaycaster(device, width, height, recordVisibleBlocksUI);
     var render = this;
     resolution.onchange = async () => {
         var width = canvas.width / resolutionToDivisor[resolution.value];
         var height = canvas.height / resolutionToDivisor[resolution.value];
         console.log(`Changed resolution to ${width}x${height}`);
-        render.volumeRC = new VolumeRaycaster(device, width, height);
+        render.volumeRC = new VolumeRaycaster(device, width, height, recordVisibleBlocksUI);
         await render.volumeRC.setCompressedVolume(
             compressedData, dataset.compressionRate, volumeDims, dataset.scale);
         recomputeSurface = true;
