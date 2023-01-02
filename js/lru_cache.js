@@ -690,8 +690,8 @@ LRUCache.prototype.update = async function(itemNeeded, perfTracker) {
     // scale with the number of new items instead of the cache size, at the cost of making
     // it not quite guaranteed that the oldest items are always evicted first.
     var numItemsToSort = numNewItems;
-    // var numItemsToSort = numSlotsAvailable;
-    console.log(`LRU: numNewItems = ${numNewItems}, numSlotsAvailable = ${numSlotsAvailable}`);
+    // console.log(`LRU: numNewItems = ${numNewItems}, numSlotsAvailable =
+    // ${numSlotsAvailable}`);
     var commandEncoder = this.device.createCommandEncoder();
     commandEncoder.copyBufferToBuffer(
         this.slotAvailableIDs, 0, sortedIDs, 0, numSlotsAvailable * 4);
