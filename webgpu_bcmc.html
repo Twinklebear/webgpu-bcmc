@@ -48,10 +48,6 @@
                     <input type="checkbox" class="form-check-input" id="enableSpeculation">
                     <label for="enableSpeculation">Enable Speculation</label>
                 </div>
-                <!--
-                <button href="javascript:void(0);" onclick="recomputeSurface();"
-                        id="recomputeSurface" type="button" class="btn btn-primary">Recompute Surface (for benchmarking)</button>
-                -->
             </div>
             <div class="row col-12 col-lg-8 text-left mx-auto mb-2">
                 <div class="col-12 row text-left">
@@ -74,20 +70,24 @@
                         <p id="cacheMemDisplay"></p>
                     </div>
                 </div>
-                <!--
                 <div class="col-12 text-left">
                     <p id="camDisplay"></p>
                 </div>
-                -->
 
                 <button href="javascript:void(0);" id="runRandomBenchmark" onclick="runBenchmark('random');"
                     type="button" class="btn btn-primary mr-1">Random Benchmark</button>
-                <button href="javascript:void(0);" id="runSweepUp" onclick="runBenchmark('sweepUp');" type="button"
+                <button href="javascript:void(0);" id="runSweepUp"
+                    onclick="runBenchmark('sweepUp');" type="button"
                     class="btn btn-primary mr-1">Sweep Up Benchmark</button>
-                <button href="javascript:void(0);" id="runSweepDown" onclick="runBenchmark('sweepDown');" type="button"
+                <button href="javascript:void(0);" id="runSweepDown"
+                    onclick="runBenchmark('sweepDown');" type="button"
                     class="btn btn-primary">Sweep Down Benchmark</button>
-                <button href="javascript:void(0);" id="runOrbit" onclick="runBenchmark('orbit');" type="button"
-                    class="btn btn-primary mt-1">Camera Orbit Benchmark</button>
+                <button href="javascript:void(0);" id="runOrbit"
+                    onclick="runBenchmark('orbit');" type="button"
+                    class="btn btn-primary mr-1 mt-1">Camera Orbit Benchmark</button>
+                <button href="javascript:void(0);" onclick="runBenchmark('manualSingle');"
+                    id="recomputeSurface" type="button"
+                    class="btn btn-primary mr-1 mt-1">Recompute Surface (for benchmarking)</button>
             </div>
         </div>
     </div>

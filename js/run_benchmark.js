@@ -23,7 +23,7 @@ RandomIsovalueBenchmark.prototype.reset = function() {
     this.iteration = 0;
 };
 
-var SweepIsovalueBenchark = function(isovalueSlider, range, sweepUp) {
+var SweepIsovalueBenchmark = function(isovalueSlider, range, sweepUp) {
     this.iteration = 0;
     this.isovalueSlider = isovalueSlider;
     this.range = range;
@@ -38,7 +38,7 @@ var SweepIsovalueBenchark = function(isovalueSlider, range, sweepUp) {
     }
 };
 
-SweepIsovalueBenchark.prototype.run = function() {
+SweepIsovalueBenchmark.prototype.run = function() {
     if (this.iteration == this.numIterations) {
         return false;
     }
@@ -53,7 +53,25 @@ SweepIsovalueBenchark.prototype.run = function() {
     return true;
 };
 
-SweepIsovalueBenchark.prototype.reset = function() {
+// ManualSingleBenchmark just re-runs whatever current isovalue we have picked
+var ManualSingleBenchmark = function() {
+    this.done = false;
+    this.name = "manualSingle";
+};
+
+ManualSingleBenchmark.prototype.run = function() {
+    if (this.done) {
+        return false;
+    }
+    this.done = true;
+    return true;
+};
+
+ManualSingleBenchmark.prototype.reset = function() {
+    this.done = false;
+};
+
+SweepIsovalueBenchmark.prototype.reset = function() {
     this.iteration = 0;
 };
 

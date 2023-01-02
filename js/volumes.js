@@ -149,11 +149,6 @@ var getVolumeDimensions = function(filename) {
     return [parseInt(m[2]), parseInt(m[3]), parseInt(m[4])];
 };
 
-function recomputeSurface()
-{
-    requestRecompute = true;
-}
-
 function runBenchmark(benchmark)
 {
     requestBenchmark = benchmark;

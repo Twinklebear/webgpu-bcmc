@@ -95,13 +95,12 @@
     };
     await this.volumeRC.setCompressedVolume(
         compressedData, dataset.compressionRate, volumeDims, dataset.scale);
-    // compressedData = null;
 
     var totalMemDisplay = document.getElementById("totalMemDisplay");
     var mcMemDisplay = document.getElementById("mcMemDisplay");
     var cacheMemDisplay = document.getElementById("cacheMemDisplay");
     var fpsDisplay = document.getElementById("fps");
-    // var camDisplay = document.getElementById("camDisplay");
+    var camDisplay = document.getElementById("camDisplay");
 
     var enableCache = document.getElementById("enableCache");
     enableCache.checked = true;
@@ -258,14 +257,17 @@
                 currentBenchmark = new NestedBenchmark(valueBenchmark, cameraBenchmark);
             } else if (requestBenchmark == "sweepUp") {
                 var valueBenchmark =
-                    new SweepIsovalueBenchark(isovalueSlider, dataset.range, true);
+                    new SweepIsovalueBenchmark(isovalueSlider, dataset.range, true);
                 cameraBenchmark = new CameraOrbitBenchmark(1.5);
                 currentBenchmark = new NestedBenchmark(valueBenchmark, cameraBenchmark);
             } else if (requestBenchmark == "sweepDown") {
                 var valueBenchmark =
-                    new SweepIsovalueBenchark(isovalueSlider, dataset.range, false);
+                    new SweepIsovalueBenchmark(isovalueSlider, dataset.range, false);
                 cameraBenchmark = new CameraOrbitBenchmark(1.5);
                 currentBenchmark = new NestedBenchmark(valueBenchmark, cameraBenchmark);
+            } else if (requestBenchmark == "manualSingle") {
+                currentBenchmark = new ManualSingleBenchmark();
+                recomputeSurface = true;
             } else {
                 cameraBenchmark = new CameraOrbitBenchmark(1.5);
                 currentBenchmark = cameraBenchmark;
@@ -301,27 +303,25 @@
             cameraChanged = false;
             recomputeSurface = true;
 
-            /*
             var eyePos = camera.eyePos();
             var eyeDir = camera.eyeDir();
             var upDir = camera.upDir();
-            camDisplay.innerHTML = `eye = ${eyePos[0].toFixed(4)} ${eyePos[1].toFixed(
+            camDisplay.innerHTML = `eye = ${eyePos[0].toFixed(4)}, ${eyePos[1].toFixed(
                 4
-            )} ${eyePos[2].toFixed(4)}<br/>
-                dir = ${eyeDir[0].toFixed(4)} ${eyeDir[1].toFixed(
+            )}, ${eyePos[2].toFixed(4)}<br/>
+                dir = ${eyeDir[0].toFixed(4)}, ${eyeDir[1].toFixed(
                 4
-            )} ${eyeDir[2].toFixed(4)}<br/>
-                up = ${upDir[0].toFixed(4)} ${upDir[1].toFixed(
+            )}, ${eyeDir[2].toFixed(4)}<br/>
+                up = ${upDir[0].toFixed(4)}, ${upDir[1].toFixed(
                 4
-            )} ${upDir[2].toFixed(4)}`;
-            */
+            )}, ${upDir[2].toFixed(4)}`;
         }
 
         if (!enableCache.checked) {
             await this.volumeRC.lruCache.reset();
         }
 
-        if (isovalueSlider.value != currentIsovalue || requestRecompute) {
+        if (isovalueSlider.value != currentIsovalue) {
             recomputeSurface = true;
             currentIsovalue = parseFloat(isovalueSlider.value);
         }
