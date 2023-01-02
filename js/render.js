@@ -64,18 +64,23 @@
         minFilter: 'linear',
     });
 
+    var enableSpeculationUI = document.getElementById("enableSpeculation");
+    enableSpeculationUI.checked = true;
+
     var recordVisibleBlocksUI = document.getElementById("recordVisibleBlocks")
     var resolution = document.getElementById("resolution");
     var resolutionToDivisor = {"full": 1, "half": 2, "quarter": 4};
     var width = canvas.width / resolutionToDivisor[resolution.value];
     var height = canvas.height / resolutionToDivisor[resolution.value];
-    this.volumeRC = new VolumeRaycaster(device, width, height, recordVisibleBlocksUI);
+    this.volumeRC =
+        new VolumeRaycaster(device, width, height, recordVisibleBlocksUI, enableSpeculationUI);
     var render = this;
     resolution.onchange = async () => {
         var width = canvas.width / resolutionToDivisor[resolution.value];
         var height = canvas.height / resolutionToDivisor[resolution.value];
         console.log(`Changed resolution to ${width}x${height}`);
-        render.volumeRC = new VolumeRaycaster(device, width, height, recordVisibleBlocksUI);
+        render.volumeRC = new VolumeRaycaster(
+            device, width, height, recordVisibleBlocksUI, enableSpeculationUI);
         await render.volumeRC.setCompressedVolume(
             compressedData, dataset.compressionRate, volumeDims, dataset.scale);
         recomputeSurface = true;
@@ -390,6 +395,7 @@
         fpsDisplay.innerHTML = `Avg. FPS ${Math.round((1000.0 * numFrames) / totalTimeMS)}<br/>
             Avg. pass time: ${averageComputeTime}ms<br/>
             Pass # ${this.volumeRC.numPasses}<br/>
+            Speculation Count: ${this.volumeRC.speculationCount}<br/>
             Total pipeline time: ${Math.round(this.volumeRC.totalPassTime)}ms`;
     }
 })();

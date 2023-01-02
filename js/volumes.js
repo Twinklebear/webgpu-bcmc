@@ -49,7 +49,7 @@ var datasets = {
         compressionRate: 2,
         name: "duct_193x194x1000_float32.raw.crate2",
         range: [0, 4],
-        scale: [1, 1, 1000/193],
+        scale: [1, 1, 1000 / 193],
         step: 4 / 100
     },
     beechnut: {

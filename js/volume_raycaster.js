@@ -1,4 +1,5 @@
-var VolumeRaycaster = function(device, width, height, recordVisibleBlocksUI) {
+var VolumeRaycaster = function(
+    device, width, height, recordVisibleBlocksUI, enableSpeculationUI) {
     this.device = device;
     this.scanPipeline = new ExclusiveScanPipeline(device);
     this.streamCompact = new StreamCompact(device);
@@ -18,6 +19,9 @@ var VolumeRaycaster = function(device, width, height, recordVisibleBlocksUI) {
     // or'ing it with the previous pass's one to accumulate the total block visible list
     // without double-counting
     this.recordVisibleBlocksUI = recordVisibleBlocksUI;
+
+    // For testing/demo/benchmarking of enable/disable speculation
+    this.enableSpeculationUI = enableSpeculationUI;
 
     // Each pass appends its performance stats to the perfStats array,
     // this is reset for each new isovalue
@@ -1404,14 +1408,14 @@ VolumeRaycaster.prototype.renderSurface =
         this.totalPassTime = 0;
         this.numPasses = 0;
         this.speculationCount = 1;
+        this.speculationEnabled = this.enableSpeculationUI.checked;
 
         this.surfacePerfStats = [];
 
-        this.recordVisibleBlocks = false;
+        this.recordVisibleBlocks = this.recordVisibleBlocksUI.checked;
         this.recordBlockActiveList = null;
         this.recordBlockVisibleList = null;
-        if (this.recordVisibleBlocksUI.checked) {
-            this.recordVisibleBlocks = true;
+        if (this.recordVisibleBlocks) {
             console.log(
                 `WARNING: Recording active/visible block statistics may effect performance!`);
             this.recordBlockActiveList = new Uint8Array(this.totalBlocks).fill(0);
@@ -1575,21 +1579,22 @@ VolumeRaycaster.prototype.renderSurface =
             this.passPerfStats["endPassRaysActive_ms"] = numRaysActive;
             // console.log(`num rays active after raytracing: ${numRaysActive}`);
 
-            var commandEncoder = this.device.createCommandEncoder();
-            this.speculationCount =
-                Math.min(Math.floor(this.width * this.height / numRaysActive), 64);
-            // console.log(`Next pass speculation count is ${this.speculationCount}`);
-            var uploadSpeculationCount = this.device.createBuffer(
-                {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
-            new Uint32Array(uploadSpeculationCount.getMappedRange()).set([
-                this.speculationCount
-            ]);
-            uploadSpeculationCount.unmap();
-            commandEncoder.copyBufferToBuffer(
-                uploadSpeculationCount, 0, this.viewParamBuf, (16 + 8 + 1 + 1) * 4, 4);
-            this.device.queue.submit([commandEncoder.finish()]);
-            await this.device.queue.onSubmittedWorkDone();
-
+            if (this.speculationEnabled) {
+                var commandEncoder = this.device.createCommandEncoder();
+                this.speculationCount =
+                    Math.min(Math.floor(this.width * this.height / numRaysActive), 64);
+                // console.log(`Next pass speculation count is ${this.speculationCount}`);
+                var uploadSpeculationCount = this.device.createBuffer(
+                    {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
+                new Uint32Array(uploadSpeculationCount.getMappedRange()).set([
+                    this.speculationCount
+                ]);
+                uploadSpeculationCount.unmap();
+                commandEncoder.copyBufferToBuffer(
+                    uploadSpeculationCount, 0, this.viewParamBuf, (16 + 8 + 1 + 1) * 4, 4);
+                this.device.queue.submit([commandEncoder.finish()]);
+                await this.device.queue.onSubmittedWorkDone();
+            }
             console.log(`++++++++++`);
         }
     } else {
