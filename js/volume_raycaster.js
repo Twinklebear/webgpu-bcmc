@@ -1391,8 +1391,8 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
 };
 
 // Progressively compute the surface, returns true when rendering is complete
-VolumeRaycaster.prototype.renderSurface =
-    async function(isovalue, LODThreshold, viewParamUpload, renderParamsChanged) {
+VolumeRaycaster.prototype.renderSurface = async function(
+    isovalue, LODThreshold, viewParamUpload, renderParamsChanged, eyePos, eyeDir, upDir) {
     this.passPerfStats = {};
 
     if (this.renderComplete && !renderParamsChanged) {
@@ -1460,6 +1460,11 @@ VolumeRaycaster.prototype.renderSurface =
         this.passPerfStats["volumeDims"] = this.volumeDims;
         this.passPerfStats["imageSize"] = [this.width, this.height];
         this.passPerfStats["nPixels"] = this.width * this.height;
+
+        // Save camera info as well for reproducibility
+        this.passPerfStats["eyePos"] = [eyePos[0], eyePos[1], eyePos[2]];
+        this.passPerfStats["eyeDir"] = [eyeDir[0], eyeDir[1], eyeDir[2]];
+        this.passPerfStats["upDir"] = [upDir[0], upDir[1], upDir[2]];
     }
     console.log(`++++ Surface pass ${this.numPasses} ++++`);
     this.passPerfStats["passID"] = this.numPasses;

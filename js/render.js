@@ -327,9 +327,13 @@
         }
 
         if (recomputeSurface || !surfaceDone) {
+            var eyePos = camera.eyePos();
+            var eyeDir = camera.eyeDir();
+            var upDir = camera.upDir();
+
             var start = performance.now();
             surfaceDone = await this.volumeRC.renderSurface(
-                currentIsovalue, 1, upload, recomputeSurface);
+                currentIsovalue, 1, upload, recomputeSurface, eyePos, eyeDir, upDir);
             var end = performance.now();
 
             if (surfaceDone) {
