@@ -141,14 +141,25 @@
     const up = vec3.set(vec3.create(), 0.0, 1.0, 0.0);
     */
     // For matching benchmark configurations
-    const setEyePos = [-0.5574793219566345, -0.43040087819099426, 0.8748367428779602];
-    const setEyeDir = [0.4803486764431, 0.35665804147720337, -0.8012865781784058];
-    const setUpDir = [0.09924058616161346, 0.885618269443512, 0.45368659496307373];
-    const defaultEye = vec3.set(vec3.create(), setEyePos[0], setEyePos[1], setEyePos[2]);
+    var benchmarkEye = {
+        "eyePos": [-0.5574793219566345, -0.43040087819099426, 0.8748367428779602],
+        "eyeDir": [0.4803486764431, 0.35665804147720337, -0.8012865781784058],
+        "upDir": [0.09924058616161346, 0.885618269443512, 0.45368659496307373],
+    };
+    const defaultEye = vec3.set(vec3.create(),
+                                benchmarkEye["eyePos"][0],
+                                benchmarkEye["eyePos"][1],
+                                benchmarkEye["eyePos"][2]);
     const center = vec3.add(vec3.create(),
                             defaultEye,
-                            vec3.set(vec3.create(), setEyeDir[0], setEyeDir[1], setEyeDir[2]));
-    const up = vec3.set(vec3.create(), setUpDir[0], setUpDir[1], setUpDir[2]);
+                            vec3.set(vec3.create(),
+                                     benchmarkEye["eyeDir"][0],
+                                     benchmarkEye["eyeDir"][1],
+                                     benchmarkEye["eyeDir"][2]));
+    const up = vec3.set(vec3.create(),
+                        benchmarkEye["upDir"][0],
+                        benchmarkEye["upDir"][1],
+                        benchmarkEye["upDir"][2]);
 
     var camera = new ArcballCamera(defaultEye, center, up, 4, [
         canvas.width,
@@ -365,7 +376,7 @@
             if (document.getElementById("outputImages").checked) {
                 await takeScreenshot(
                     device,
-                    `${dataset.name.substring(0, 5)}_pass_${this.volumeRC.numPasses}.png`,
+                    `${dataset.name.substring(0, 5)}_pass_${this.volumeRC.numPasses}`,
                     this.volumeRC.renderTarget,
                     imageBuffer,
                     document.getElementById('out-canvas'));
@@ -374,7 +385,7 @@
         if (saveScreenshot) {
             saveScreenshot = false;
             await takeScreenshot(device,
-                                 `${dataset.name}_prog_iso.png`,
+                                 `${dataset.name}_prog_iso`,
                                  this.volumeRC.renderTarget,
                                  imageBuffer,
                                  document.getElementById('out-canvas'));
