@@ -135,9 +135,20 @@
     };
     displayCacheInfo();
 
+    /*
     const defaultEye = vec3.set(vec3.create(), 0.0, 0.0, 1.5);
     const center = vec3.set(vec3.create(), 0.0, 0.0, 0.0);
     const up = vec3.set(vec3.create(), 0.0, 1.0, 0.0);
+    */
+    // For matching benchmark configurations
+    const setEyePos = [-0.5574793219566345, -0.43040087819099426, 0.8748367428779602];
+    const setEyeDir = [0.4803486764431, 0.35665804147720337, -0.8012865781784058];
+    const setUpDir = [0.09924058616161346, 0.885618269443512, 0.45368659496307373];
+    const defaultEye = vec3.set(vec3.create(), setEyePos[0], setEyePos[1], setEyePos[2]);
+    const center = vec3.add(vec3.create(),
+                            defaultEye,
+                            vec3.set(vec3.create(), setEyeDir[0], setEyeDir[1], setEyeDir[2]));
+    const up = vec3.set(vec3.create(), setUpDir[0], setUpDir[1], setUpDir[2]);
 
     var camera = new ArcballCamera(defaultEye, center, up, 4, [
         canvas.width,
@@ -352,30 +363,21 @@
             totalMemDisplay.innerHTML = `Total Memory: ${memUse[2]}`;
 
             if (document.getElementById("outputImages").checked) {
-                var commandEncoder = device.createCommandEncoder();
-                commandEncoder.copyTextureToBuffer(
-                    {texture: this.volumeRC.renderTarget},
-                    {buffer: imageBuffer, bytesPerRow: canvas.width * 4},
-                    [canvas.width, canvas.height, 1]);
-                device.queue.submit([commandEncoder.finish()]);
-                await device.queue.onSubmittedWorkDone();
-                await imageBuffer.mapAsync(GPUMapMode.READ);
-                var outputArray = new Uint8Array(imageBuffer.getMappedRange());
-                var outCanvas = document.getElementById('out-canvas');
-                var context = outCanvas.getContext('2d');
-                var imgData = context.createImageData(canvas.width, canvas.height);
-                // fill imgData with colors from array
-                for (var i = 0; i < outputArray.length; i++) {
-                    imgData.data[i] = outputArray[i];
-                }
-                context.putImageData(imgData, 0, 0);
-                outCanvas.toBlob(function(b) {
-                    saveAs(
-                        b,
-                        `${dataset.name.substring(0, 5)}_pass_${this.volumeRC.numPasses}.png`);
-                }, "image/png");
-                imageBuffer.unmap();
+                await takeScreenshot(
+                    device,
+                    `${dataset.name.substring(0, 5)}_pass_${this.volumeRC.numPasses}.png`,
+                    this.volumeRC.renderTarget,
+                    imageBuffer,
+                    document.getElementById('out-canvas'));
             }
+        }
+        if (saveScreenshot) {
+            saveScreenshot = false;
+            await takeScreenshot(device,
+                                 `${dataset.name}_prog_iso.png`,
+                                 this.volumeRC.renderTarget,
+                                 imageBuffer,
+                                 document.getElementById('out-canvas'));
         }
 
         // Blit the image rendered by the raycaster onto the screen

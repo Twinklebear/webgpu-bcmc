@@ -1,5 +1,6 @@
 var requestRecompute = false;
 var requestBenchmark = null;
+var saveScreenshot = false;
 
 var datasets = {
     plane_x: {
@@ -154,3 +155,31 @@ function runBenchmark(benchmark)
     requestBenchmark = benchmark;
 }
 
+function saveScreenShotButton()
+{
+    saveScreenshot = true;
+}
+
+// Assumes the input renderTarget and outCanvas have the same image dimensions
+async function takeScreenshot(device, name, renderTarget, imageBuffer, outCanvas)
+{
+    var commandEncoder = device.createCommandEncoder();
+    commandEncoder.copyTextureToBuffer({texture: renderTarget},
+                                       {buffer: imageBuffer, bytesPerRow: outCanvas.width * 4},
+                                       [outCanvas.width, outCanvas.height, 1]);
+    device.queue.submit([commandEncoder.finish()]);
+    await device.queue.onSubmittedWorkDone();
+
+    await imageBuffer.mapAsync(GPUMapMode.READ);
+    var imageReadbackArray = new Uint8ClampedArray(imageBuffer.getMappedRange());
+
+    var context = outCanvas.getContext('2d');
+    var imgData = context.createImageData(outCanvas.width, outCanvas.height);
+    imgData.data.set(imageReadbackArray);
+    context.putImageData(imgData, 0, 0);
+    outCanvas.toBlob(function(b) {
+        saveAs(b, `${name}_screenshot.png`);
+    }, "image/png");
+
+    imageBuffer.unmap();
+}

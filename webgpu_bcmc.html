@@ -88,10 +88,13 @@
                 <button href="javascript:void(0);" onclick="runBenchmark('manualSingle');"
                     id="recomputeSurface" type="button"
                     class="btn btn-primary mr-1 mt-1">Recompute Surface (for benchmarking)</button>
+                <button href="javascript:void(0);" onclick="saveScreenShotButton();"
+                    id="saveScreenShotButton" type="button"
+                    class="btn btn-primary mr-1 mt-1">Take Screenshot</button>
             </div>
         </div>
     </div>
-    <canvas id="out-canvas" class="img-fluid" width="1280" height="720" style="display: none;"></canvas>
+    <canvas id="out-canvas" width="1280" height="720" style="display: none;"></canvas>
     <script src="shaders/embedded_shaders.js"></script>
     <script src="js/gl-matrix-min.js"></script>
     <script src="js/webgl-util.js"></script>
