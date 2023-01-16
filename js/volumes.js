@@ -178,7 +178,7 @@ async function takeScreenshot(device, name, renderTarget, imageBuffer, outCanvas
     imgData.data.set(imageReadbackArray);
     context.putImageData(imgData, 0, 0);
     outCanvas.toBlob(function(b) {
-        saveAs(b, `${name}_screenshot.png`);
+        saveAs(b, `${name}.png`);
     }, "image/png");
 
     imageBuffer.unmap();
