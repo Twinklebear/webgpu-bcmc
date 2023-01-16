@@ -135,16 +135,15 @@
     };
     displayCacheInfo();
 
-    /*
     const defaultEye = vec3.set(vec3.create(), 0.0, 0.0, 1.5);
     const center = vec3.set(vec3.create(), 0.0, 0.0, 0.0);
     const up = vec3.set(vec3.create(), 0.0, 1.0, 0.0);
-    */
+    /*
     // For matching benchmark configurations
     var benchmarkEye = {
-        "eyePos": [-0.5574793219566345, -0.43040087819099426, 0.8748367428779602],
-        "eyeDir": [0.4803486764431, 0.35665804147720337, -0.8012865781784058],
-        "upDir": [0.09924058616161346, 0.885618269443512, 0.45368659496307373],
+        "eyePos": [-1.012491226196289, 0.7122936248779297, 0.8317527174949646],
+        "eyeDir": [0.6625354886054993, -0.5211779475212097, -0.537977933883667],
+        "upDir": [0.4094274640083313, 0.8534227609634399, -0.3225504457950592],
     };
     const defaultEye = vec3.set(vec3.create(),
                                 benchmarkEye["eyePos"][0],
@@ -160,6 +159,7 @@
                         benchmarkEye["upDir"][0],
                         benchmarkEye["upDir"][1],
                         benchmarkEye["upDir"][2]);
+                        */
 
     var camera = new ArcballCamera(defaultEye, center, up, 4, [
         canvas.width,
