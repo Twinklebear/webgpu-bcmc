@@ -340,6 +340,9 @@
 
         if (currentBenchmark) {
             if (!currentBenchmark.run()) {
+                var blob = new Blob([JSON.stringify(perfResults)], {type: "text/plain"});
+                saveAs(blob, `bcmc-explicit-${dataset.name}-${currentBenchmark.name}.json`);
+
                 currentBenchmark = null;
             }
         }
@@ -370,17 +373,6 @@
             requestRecompute = false;
             numFrames = 0;
             totalTimeMS = 0;
-
-            /*
-            console.log(JSON.stringify(perfResults));
-            for (const prop in perfResults) {
-                var sum = perfResults[prop].reduce(function(acc, x) {
-                    return acc + x;
-                });
-                console.log(
-                    `${prop} average = ${(sum / perfResults[prop].length).toFixed(3)}`);
-            }
-            */
         }
 
         renderPassDesc.colorAttachments[0].view = context.getCurrentTexture().createView();

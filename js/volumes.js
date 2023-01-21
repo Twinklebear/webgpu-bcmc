@@ -38,6 +38,41 @@ var datasets = {
         range: [550, 2100],
         scale: [1, 1, 1],
     },
+    tacc_turbulence: {
+        compressionRate: 2,
+        name: "tacc_turbulence_256x256x256_float32.raw.crate2",
+        range: [0, 10],
+        scale: [1, 1, 1],
+        step: 10 / 100,
+    },
+    duct: {
+        compressionRate: 2,
+        name: "duct_193x194x1000_float32.raw.crate2",
+        range: [0, 4],
+        scale: [1, 1, 1000 / 193],
+        step: 4 / 100
+    },
+    beechnut: {
+        compressionRate: 1,
+        name: "beechnut_1024x1024x1546_uint16.raw.crate1",
+        range: [13200, 17000],
+        scale: [1, 1, 1],
+        step: (17000 - 13200) / 100.0,
+    },
+    jicf_q: {
+        compressionRate: 2,
+        name: "jicf_q_1408x1080x1100_float32.raw.crate2",
+        range: [-15, 15],
+        scale: [1, 1, 1],
+        step: 30 / 100
+    },
+    truss: {
+        compressionRate: 2,
+        name: "synthetic_truss_with_five_defects_1200x1200x1200_float32.raw.crate2",
+        range: [0, 0.01],
+        scale: [1, 1, 1],
+    },
+
     // For benchmarks:
     skull: {
         compressionRate: 2,
