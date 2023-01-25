@@ -1611,7 +1611,7 @@ VolumeRaycaster.prototype.renderSurface = async function(
     this.surfacePerfStats.push(this.passPerfStats);
 
     console.log("=============");
-    this.totalPassTime += end - startPass;
+    this.totalPassTime += endPass - startPass;
     this.numPasses += 1;
     //}
     this.renderComplete = numRaysActive == 0;
