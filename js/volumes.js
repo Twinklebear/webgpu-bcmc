@@ -70,7 +70,7 @@ var datasets = {
     tacc_turbulence: {
         compressionRate: 2,
         name: "tacc_turbulence_256x256x256_float32.raw.crate2",
-        range: [0, 10],
+        range: [1, 10],
         scale: [1, 1, 1],
         step: 10 / 100,
     },
