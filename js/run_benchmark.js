@@ -8,14 +8,6 @@ var RandomIsovalueBenchmark = function(isovalueSlider, perfResults, range) {
 
 RandomIsovalueBenchmark.prototype.run = function() {
     if (this.iteration == 100) {
-        console.log(JSON.stringify(this.perfResults));
-        for (const prop in this.perfResults) {
-            var sum = this.perfResults[prop].reduce(function(acc, x) {
-                return acc + x;
-            });
-            console.log(
-                `${prop} average = ${(sum / this.perfResults[prop].length).toFixed(3)}`);
-        }
         return false;
     }
     var range = this.range[1] - this.range[0];
@@ -41,14 +33,6 @@ var SweepIsovalueBenchark = function(isovalueSlider, perfResults, range, sweepUp
 
 SweepIsovalueBenchark.prototype.run = function() {
     if (this.iteration == 100) {
-        console.log(JSON.stringify(this.perfResults));
-        for (const prop in this.perfResults) {
-            var sum = this.perfResults[prop].reduce(function(acc, x) {
-                return acc + x;
-            });
-            console.log(
-                `${prop} average = ${(sum / this.perfResults[prop].length).toFixed(3)}`);
-        }
         return false;
     }
     var step = (this.range[1] - this.range[0]) / 100;

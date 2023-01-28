@@ -426,7 +426,7 @@ CompressedMarchingCubes.prototype.reportMemoryUse = function() {
         cacheText += "<li>" + prop + ": " + formatBytes(memUse.cache[prop]) + "</li>";
     }
     cacheText += "</ul>";
-    return [mcText, cacheText, formatBytes(totalMem)];
+    return [mcText, cacheText, formatBytes(totalMem), memUse];
 };
 
 CompressedMarchingCubes.prototype.setCompressedVolume =
@@ -591,6 +591,7 @@ CompressedMarchingCubes.prototype.computeSurface = async function(isovalue, perf
       */
 
     if (perfTracker.computeActiveBlocks === undefined) {
+        perfTracker.totalBlocks = this.totalBlocks;
         perfTracker.computeActiveBlocks = [];
         perfTracker.numActiveBlocks = [];
 
