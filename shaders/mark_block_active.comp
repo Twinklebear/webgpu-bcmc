@@ -73,6 +73,9 @@ void main(void)
 
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
     const uint block_id = block_ids[ray_index];
+    if (block_id == UINT_MAX) {
+        return;
+    }
     const uvec3 block_pos = block_id_to_pos(block_id);
 
     // May need to become an atomic or? I don't think it should
