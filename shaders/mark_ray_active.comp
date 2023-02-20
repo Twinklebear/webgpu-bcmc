@@ -29,6 +29,7 @@ void main() {
     if (gl_GlobalInvocationID.x >= image_width) {
         return;
     }
+    // Mark the pixels active, speculated ray-block intersections refer to these pixels
     uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
     ray_active[ray_index] = rays[ray_index].t != FLT_MAX ? 1 : 0;
 }
