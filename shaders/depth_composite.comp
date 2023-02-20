@@ -81,6 +81,7 @@ void main(void)
         imageStore(render_target, pixel_coords, vec4(color.rgb, 1.f));
     }
     // Terminate rays that were partially speculated and may not have hit anything
+    // This could also be done in macro traverse
     if (rays[ray_index].t == -FLT_MAX) {
         rays[ray_index].t = FLT_MAX;
     }
