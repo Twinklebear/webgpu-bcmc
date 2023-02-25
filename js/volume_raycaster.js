@@ -1762,12 +1762,18 @@ VolumeRaycaster.prototype.markActiveBlocks = async function() {
         await activeReadback.mapAsync(GPUMapMode.READ);
         await visibleReadback.mapAsync(GPUMapMode.READ);
 
+        var nActiveBlocks = 0;
+
         var blockActive = new Uint32Array(activeReadback.getMappedRange());
         var blockVisible = new Uint32Array(visibleReadback.getMappedRange());
         for (var i = 0; i < this.totalBlocks; ++i) {
+            if (blockActive[i]) {
+                ++nActiveBlocks;
+            }
             this.recordBlockActiveList[i] |= blockActive[i];
             this.recordBlockVisibleList[i] |= blockVisible[i];
         }
+        this.passPerfStats["nActiveBlocks"] = nActiveBlocks;
 
         activeReadback.unmap();
         visibleReadback.unmap();
