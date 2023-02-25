@@ -283,6 +283,7 @@
     var perfResults = {
         isovalue: [],
         totalTime: [],
+        memUse: []
     };
     var once = true;
     while (true) {
