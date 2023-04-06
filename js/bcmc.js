@@ -7,6 +7,7 @@
         requiredLimits: {
             maxStorageBuffersPerShaderStage: adapter.limits.maxStorageBuffersPerShaderStage,
             maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+            maxBufferSize: adapter.limits.maxBufferSize
         },
     };
     var device = await adapter.requestDevice(gpuDeviceDesc);
