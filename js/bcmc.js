@@ -28,7 +28,7 @@
     var zfpDataName = dataset.name + ".zfp";
     var volumeURL = null;
     if (window.location.hostname == "www.willusher.io") {
-        volumeURL = "https://lab.wushernet.com/data/bcmc/" + zfpDataName;
+        volumeURL = "https://cdn.willusher.io/bcmc-demo-data/" + zfpDataName;
     } else {
         volumeURL = "/models/" + zfpDataName;
     }
