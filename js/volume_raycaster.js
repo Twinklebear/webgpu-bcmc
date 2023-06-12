@@ -1376,6 +1376,11 @@ VolumeRaycaster.prototype.computeBlockRanges = async function() {
 
         var debugVals = new Float32Array(dbgBuffer.getMappedRange());
 
+        for (var i = 0; i < 3; i++) {
+            var blob = new Blob(['[' + debugVals.slice(i * debugVals.length / 3, (i + 1) * debugVals.length / 3).toString() + ']'], {type: "text/plain"});
+            saveAs(blob, `blockRanges-${i}.json`);
+        }
+
         var valRange = [Infinity, -Infinity];
 
         for (var i = 0; i < debugVals.length; ++i) {
