@@ -35,7 +35,7 @@ layout(set = 0, binding = 3, std430) buffer CoarseCellRange
 void main(void)
 {
     const uint coarse_cell_idx = gl_GlobalInvocationID.x + block_id_offset * 32;
-    const uint total_coarse_cells = padded_dims.x * padded_dims.y * padded_dims.z / (16 * 16 * 16);
+    const uint total_coarse_cells = ((padded_dims.x * padded_dims.y) / (16 * 16 * 16)) * padded_dims.z ;
 
     if (coarse_cell_idx >= total_coarse_cells) {
         return;

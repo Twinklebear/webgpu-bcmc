@@ -31,7 +31,7 @@ const uvec3 index_to_vertex[8] = {
 void main(void)
 {
     const uint block_index = gl_GlobalInvocationID.x + block_id_offset * 32;
-    const uint total_blocks = padded_dims.x * padded_dims.y * padded_dims.z / 64;
+    const uint total_blocks = ((padded_dims.x * padded_dims.y) / 64) * padded_dims.z;
 
     if (block_index >= total_blocks) {
         return;

@@ -25,7 +25,7 @@ layout(set = 2, binding = 0, std430) buffer VoxelInformation
 void main(void)
 {
     const uint block_index = gl_GlobalInvocationID.x + block_id_offset * 32;
-    const uint total_blocks = padded_dims.x * padded_dims.y * padded_dims.z / 64;
+    const uint total_blocks = ((padded_dims.x * padded_dims.y) / 64) * padded_dims.z;
     const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
 
     if (block_index >= total_blocks) {

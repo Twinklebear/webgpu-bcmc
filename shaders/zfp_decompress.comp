@@ -196,8 +196,15 @@ struct BlockReader {
 BlockReader create_block_reader(uint block_index)
 {
     BlockReader reader;
-    reader.current_word = (block_index * max_bits) / 64;  // sizeof(Word) * 8 = 64
-    reader.current_bit = (block_index * max_bits) % 64;
+    if (max_bits != 64) {
+        reader.current_word = (block_index * max_bits) / 64;  // sizeof(Word) * 8 = 64
+        reader.current_bit = (block_index * max_bits) % 64;
+    } else {
+        // For large datasets we use 1 bit per voxel, and must skip multiplying by 64 to
+        // avoid overflowing
+        reader.current_word = block_index;
+        reader.current_bit = 0;
+    }
 
     reader.word_buffer = compressed[reader.current_word];
     reader.word_buffer = shift_right(reader.word_buffer, reader.current_bit);
