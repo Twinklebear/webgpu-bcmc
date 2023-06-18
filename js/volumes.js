@@ -137,7 +137,7 @@ var datasets = {
     richtmyer_meshkov: {
         compressionRate: 1,
         name: "richtmyer_meshkov_2048x2048x1920_uint8.raw.crate1",
-        range: [0, 255],
+        range: [40, 190],
         scale: [1, 1, 1920.0 / 2048.0],
         step: 1.0,
     },
