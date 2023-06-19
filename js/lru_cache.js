@@ -9,9 +9,9 @@ var LRUCache = function (
 
     this.totalElements = totalElements;
 
-    // Round up to the local size of 32 for the cache processing kernels
-    this.alignedTotalElements = alignTo(totalElements, 32);
-    this.cacheSize = alignTo(initialSize, 32);
+    // Round up to the local size of 64 for the cache processing kernels
+    this.alignedTotalElements = alignTo(totalElements, 64);
+    this.cacheSize = alignTo(initialSize, 64);
     this.elementSize = elementSize;
     this.numNewItems = 0;
     this.maxDispatchSize = device.limits.maxComputeWorkgroupsPerDimension;
